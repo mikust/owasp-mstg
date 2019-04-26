@@ -16,6 +16,8 @@ Local Android SDK installations are managed via Android Studio. Create an empty 
 - API 24: Android 7.0
 - API 25: Android 7.1
 - API 26: Android 8.0
+- API 27: Android 8.1
+- API 28: Android 9.0
 
 ![SDK Manager](Images/Chapters/0x05c/sdk_manager.jpg)
 
@@ -55,6 +57,14 @@ Virtually any Android mobile can be rooted. Commercial versions of Android OS (w
 
 To root a mobile device, first unlock its boot loader. The unlocking procedure depends on the device manufacturer. However, for practical reasons, rooting some mobile devices is more popular than rooting others, particularly when it comes to security testing: devices created by Google and manufactured by companies like Samsung, LG, and Motorola are among the most popular, particularly because they are used by many developers. The device warranty is not nullified when the boot loader is unlocked and Google provides many tools to support the root itself. A curated list of guides for rooting all major brand devices is posted on the [XDA forums](https://www.xda-developers.com/root/ "Guide to rooting mobile devices").
 
+###### Rooting with Magisk
+
+Magisk ("Magic Mask") is one way to root your Android device. It's specialty lies in the way, the modifications on the system are performed. While other rooting tools alter the actual data on the system partition, Magisk does not (which is called "systemless"). This enables a way to hide the modifications from root-sensitive applications (e.g. for banking or games) and allows using the official Android OTA upgrades without the need to unroot the device beforehand.
+
+You can get familiar with Magisk reading the official [documentation](https://topjohnwu.github.io/Magisk/ "Magisk Documentation"). If you don't have Magisk installed, you should follow [this](https://topjohnwu.github.io/Magisk/install.html "Magisk Installation") guidance. If you use an official Android version and plan to upgrade it, Magisk provides a [tutorial at GitHub](https://topjohnwu.github.io/Magisk/tutorials.html#ota-installation "OTA Installation").
+
+Furthermore, developers can use the power of Magisk to create own modules and [submit](https://github.com/Magisk-Modules-Repo/submission "Submission") them to the official [Magisk Modules repository](https://github.com/Magisk-Modules-Repo "Magisk-Modules-Repo"). Submitted modules can then be installed inside the Magisk Manager application. One of these installable modules is a systemless version of the famous [XPosed Framework](https://repo.xposed.info/module/de.robv.android.xposed.installer "Xposed Installer (framework)") (available for SDK versions up to 27).
+
 ##### Network Setup
 
 The available network setup options must be evaluated first. The mobile device used for testing and the machine running the interception proxy must be connected to the same Wi-Fi network. Use either an (existing) access point or create [an ad-hoc wireless network](https://support.portswigger.net/customer/portal/articles/1841150-Mobile%20Set-up_Ad-hoc%20network_OSX.html "Creating an Ad-hoc Wireless Network in OS X").
@@ -63,8 +73,148 @@ Once you've configured the network and established a connection between the test
 
 - The proxy must be [configured to point to the interception proxy](https://support.portswigger.net/customer/portal/articles/1841101-Mobile%20Set-up_Android%20Device.html "Configuring an Android Device to Work With Burp").
 - The [interception proxy's CA certificate must be added to the trusted certificates in the Android device's certificate storage](https://support.portswigger.net/customer/portal/articles/1841102-installing-burp-s-ca-certificate-in-an-android-device "Installing Burp's CA Certificate in an Android Device"). The location of the menu used to store CA certificates may depend on the Android version and Android OEM modifications of the settings menu.
+- Some application (e.g. the [Chrome browser](https://bugs.chromium.org/p/chromium/issues/detail?id=475745 "Chromium Issue 475745")) may show `NET::ERR_CERT_VALIDITY_TOO_LONG` errors, if the leaf certificate happens to have a validity extending a certain time (39 months in case of Chrome). This happens if the default Burp CA certificate is used, since the Burp Suite issues leaf certificates with the same validity as its CA certificate. You can circumvent this by creating your own CA certificate and import it to the Burp Suite, as explained in [this](https://blog.nviso.be/2018/01/31/using-a-custom-root-ca-with-burp-for-inspecting-android-n-traffic/ "Using a custom root CA with Burp for inspecting Android N traffic") blog post.
 
 After completing these steps and starting the app, the requests should show up in the interception proxy.
+
+A few other differences: from Android 8 onward, the network behavior of the app changes when HTTPS traffic is tunneled through another connection. And from Android 9 onward, the SSLSocket and SSLEngine will behave a little bit different in terms of erroring when something goes wrong during the handshakes.
+
+As mentioned before, starting with Android 7, the Android OS will no longer trust user CA certificates by default, unless specified in the application. In the following section, we explain two methods to bypass this Android security control.
+
+#### Bypassing the Network Security Configuration
+
+From Android 7 onwards, the network security configuration allows apps to customize their network security settings, by defining which CA certificates the app will be trusting.
+
+In order to implement the network security configuration for an app, you would need to create a new xml resource file with the name `network_security_config.xml`. This is explained in detail in one of the [Google Android Codelabs](https://codelabs.developers.google.com/codelabs/android-network-security-config/#3 "Basic Network Security Configuration").
+
+After the creation, the apps must also include an entry in the manifest file to point to the new network security configuration file.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest ... >
+    <application android:networkSecurityConfig="@xml/network_security_config"
+                    ... >
+        ...
+    </application>
+</manifest>
+```
+
+The network security configuration uses an XML file where the app specifies which CA certificates will be trusted. There are various ways to bypass the Network Security Configuration, which will be described below. Please also see the [Security Analyst’s Guide to Network Security Configuration in Android P](https://www.nowsecure.com/blog/2018/08/15/a-security-analysts-guide-to-network-security-configuration-in-android-p/ "Security Analyst’s Guide to Network Security Configuration in Android P") for further information.
+
+##### Adding the User Certificates to the Network Security Configuration
+
+There are different configurations available for the Network Security Configuration to [add non-system Certificate Authorities](https://developer.android.com/training/articles/security-config#CustomTrust "Custom Trust") via the src attribute:
+
+```xml
+<certificates src=["system" | "user" | "raw resource"]
+              overridePins=["true" | "false"] />
+```
+Each certificate can be one of the following:
+- a "raw resource" ID pointing to a file containing X.509 certificates
+- "system" for the pre-installed system CA certificates
+- "user" for user-added CA certificates
+
+
+The CA certificates trusted by the app can be a system trusted CA as well as a user CA. Usually you will have added the certificate of your interception proxy already as additional CA in Android. Therefore we will focus on the "user" setting, which allows you to force the Android app to trust this certificate with the following Network Security Configuration configuration below:
+
+```xml
+<network-security-config>
+   <base-config>
+      <trust-anchors>
+          <certificates src="system" />
+          <certificates src="user" />
+      </trust-anchors>
+   </base-config>
+</network-security-config>
+```
+
+To implement this new setting you must follow the steps below:
+
+- Decompile the app using a decompilation tool like apktool:
+```bash
+$ apktool d <filename>.apk
+```
+- Make the application trust user certificates by creating a network security configuration that includes `<certificates src="user" />` as explained above
+- Go into the directory created by apktool when decompiling the app and rebuild the app using apktool. The new apk will be in the `dist` directory.
+```bash
+$ apktool b
+```
+- You need to repackage the app, as explained in the [repackaging chapter](https://github.com/OWASP/owasp-mstg/blob/master/Document/0x05c-Reverse-Engineering-and-Tampering.md#repackaging "Repackaging"). For more details on the repackaging process you can also consult the [Android developer documentation](https://developer.android.com/studio/publish/app-signing#signing-manually), that explains the process as a whole.
+
+Note that even if this method is quite simple its major drawback is that you have to apply this operation for each application you want to evaluate which is additional overhead for testing.
+
+> Bear in mind that if the app you are testing has additional hardening measures, like verification of the app signature you might not be able to start the app anymore. As part of the repackaging you will sign the app with your own key and therefore the signature changes will result in triggering such checks that might lead to immediate termination of the app. You would need to identify and disable such checks either by patching them during repackaging of the app or dynamic instrumentation through Frida.
+
+There is a python script available that automates the steps described above called [Android-CertKiller](https://github.com/51j0/Android-CertKiller "Android-CertKiller"). This Python script can extract the APK from an installed Android app, decompile it, make it debuggable, add a new network security config that allows user certificates, builds and signs the new APK and installs the new APK with the SSL Bypass. The last step, [installing the app might fail](https://github.com/51j0/Android-CertKiller/issues "APK not installing"), due to a bug at the moment.  
+
+```bash
+python main.py -w
+
+***************************************
+Android CertKiller (v0.1)
+***************************************
+
+CertKiller Wizard Mode
+---------------------------------
+List of devices attached
+4200dc72f27bc44d	device
+
+---------------------------------
+
+Enter Application Package Name: nsc.android.mstg.owasp.org.android_nsc
+
+Package: /data/app/nsc.android.mstg.owasp.org.android_nsc-1/base.apk
+
+I. Initiating APK extraction from device
+   complete
+------------------------------
+I. Decompiling
+   complete
+------------------------------
+I. Applying SSL bypass
+   complete
+------------------------------
+I. Building New APK
+   complete
+------------------------------
+I. Signing APK
+   complete
+------------------------------
+
+Would you like to install the APK on your device(y/N): y
+------------------------------------
+ Installing Unpinned APK
+------------------------------
+Finished
+```
+
+##### Adding the Proxy's certificate among system trusted CAs using Magisk
+
+In order to avoid the obligation of configuring the Network Security Configuration for each application, we must force the device to accept the proxy's certificate as one of the systems trusted certificates.
+
+There is a [Magisk module](https://github.com/NVISO-BE/MagiskTrustUserCerts "Magisk Trust User Certs") that will automatically add all user-installed CA certificates to the list of system trusted CAs.
+
+Download the latest version of the module [here](https://github.com/NVISO-BE/MagiskTrustUserCerts/releases "Magisk Trust User Certs - Releases"), push the downloaded file over to the device and import it in the Magisk Manager's "Module" view by clicking on the `+` button. Finally, a restart is required by Magisk Manager to let changes take effect.
+
+From now on, any CA certificate that is installed by the user via "Settings", "Security & location", "Encryption & credentials", "Install from storage" (location may differ) is automatically pushed into the system's trust store by this Magisk module. Reboot and verify that the CA certificate is listed in "Settings", "Security & location", "Encryption & credentials", "Trusted credentials" (location may differ).
+
+##### Manually adding the Proxy's certificate among system trusted CAs
+
+Alternatively, you can follow the following steps manually in order to achieve the same result:
+
+- Make the /system partition writable, which is only possible on a rooted device. Run the 'mount' command to make sure the /system is writable: `mount -o rw,remount /system`. If this command fails, try running the following command 'mount -o rw,remount -t ext4 /system'
+- Prepare the proxy's CA certificates to match system certificates format. Export the proxy's certificates in `der` format (this is the default format in Burp Suite) then run the following commands:
+```shell
+$ openssl x509 -inform DER -in cacert.der -out cacert.pem  
+$ openssl x509 -inform PEM -subject_hash_old -in cacert.pem | head -1  
+mv cacert.pem <hash>.0
+```
+- Finally, copy the <hash>.0 file into the directory /system/etc/security/cacerts and then run the following command:
+```shell
+chmod 644 <hash>.0
+```
+
+By following the steps described above you allow any application to trust the proxy's certificate, which allows you to intercept its traffic, of course unless the application uses SSL pinning.
 
 #### Testing on the Emulator
 
@@ -118,6 +268,9 @@ $ adb push cacert.cer /sdcard/
 5. Scroll down and tap `cacert.cer`.
 
 You should then be prompted to confirm installation of the certificate (you'll also be asked to set a device PIN if you haven't already).
+
+For Android 7 and above follow the same procedure described in the "Bypassing the Network Security Configuration" section.
+
 
 ##### Connecting to an Android Virtual Device (AVD) as Root
 
@@ -213,7 +366,7 @@ Several tools support the dynamic analysis of applications that rely on the HTTP
 
 ##### Client Isolation in Wireless Networks
 
-Once you have setup an interception proxy and have a MITM position you might still not be able to see anything. This might be due to restrictions in the app (see next section) but can also be due to so called client isolation in the Wifi that you are connected to.
+Once you have setup an interception proxy and have a MITM position you might still not be able to see anything. This might be due to restrictions in the app (see next section) but can also be due to so called client isolation in the Wi-Fi that you are connected to.
 
 [Wireless Client Isolation](https://documentation.meraki.com/MR/Firewall_and_Traffic_Shaping/Wireless_Client_Isolation "Wireless Client Isolation") is a security feature that prevents wireless clients from communicating with one another. This feature is useful for guest and BYOD SSIDs adding a level of security to limit attacks and threats between devices connected to the wireless networks.
 
@@ -225,7 +378,7 @@ You can configure the proxy on your Android device to point to 127.0.0.1:8080, c
 $ adb reverse tcp:8080 tcp:8080
 ```
 
-Once you have done this all proxy traffic on your Android phone will be going to port 8080 on 127.0.0.1 and it will be redirected via adb to 127.0.0.1:8080 on your laptop and you will see now the traffic in your Burp. With this trick you are able to test and intercept traffic also in Wifis that have client isolation.
+Once you have done this all proxy traffic on your Android phone will be going to port 8080 on 127.0.0.1 and it will be redirected via adb to 127.0.0.1:8080 on your laptop and you will see now the traffic in your Burp. With this trick you are able to test and intercept traffic also in Wi-Fis that have client isolation.
 
 ##### Intercepting Non-Proxy Aware Apps
 
@@ -383,9 +536,9 @@ You can display the captured traffic in a human-readable format with Wireshark. 
 
 ![Wireshark and tcpdump](Images/Chapters/0x05b/tcpdump_and_wireshard_on_android.png)
 
-This neat little trick allows you now to identify what kind of protocols are used and to which endpoints the app is talking to. The questions is now, how can I test the endpoints if Burp is not capable of showing the traffic? There is no easy answer for this, but a few Burp Plugins that can get you started.
+This neat little trick allows you now to identify what kind of protocols are used and to which endpoints the app is talking to. The questions is now, how can I test the endpoints if Burp is not capable of showing the traffic? There is no easy answer for this, but a few Burp plugins that can get you started.
 
-##### Burp Plugins to Process Non-HTTP Traffic
+##### Burp plugins to Process Non-HTTP Traffic
 
 Interception proxies such as Burp and OWASP ZAP won't show non-HTTP traffic, because they aren't capable of decoding it properly by default. There are, however, Burp plugins available such as:
 - [Burp-non-HTTP-Extension](https://github.com/summitt/Burp-Non-HTTP-Extension) and
@@ -440,11 +593,17 @@ rdr pass inet proto tcp from any to any port 5236 -> 127.0.0.1 port 8080
 " | sudo pfctl -ef -
 ```
 
-- The interception proxy must listen to the port specified in the port forwarding rule above (port 8080).
+**Intercepting the Requests**
+
+The interception proxy must listen to the port specified in the port forwarding rule above (port 8080).
 
 Start the app and trigger a function that uses FCM. You should see HTTP messages in your interception proxy.
 
 ![Intercepted Messages](Images/Chapters/0x05b/FCM_Intercept.png)
+
+**End-to-End Encryption for Push Notifications**
+
+As an additional layer of security, push notifications can be encrypted by using [Capillary](https://github.com/google/capillary "Capillary"). Capillary is a library to simplify the sending of end-to-end (E2E) encrypted push messages from Java-based application servers to Android clients.
 
 ##### Drozer
 
@@ -477,7 +636,7 @@ Drozer depends on older versions of some libraries. Avoid messing up the system'
 
 Install virtualenv via pip:
 
-```shell 
+```shell
 $ pip install virtualenv
 ```
 
@@ -510,7 +669,7 @@ $ easy_install protobuf==2.4.1 twisted==10.2.0
 
 Finally, download and install the Python .egg from the MWR labs website:
 
-```shell 
+```shell
 $ wget https://github.com/mwrlabs/drozer/releases/download/2.3.4/drozer-2.3.4.tar.gz
 $ tar xzf drozer-2.3.4.tar.gz
 $ easy_install drozer-2.3.4-py2.7.egg
@@ -619,24 +778,90 @@ This will install any module that matches your query. Newly installed modules ar
 
 #### Potential Obstacles
 
-Discuss with your project team the possibility of providing a debug build for the following security controls, which may be implemented in the app you're about to test. A debug build provides several benefits for a (white box) test by allowing a more comprehensive analysis.
+Applications often implement security controls that make it more difficult to perform a security review of the application, such as root detection and certificate pinning. Ideally, you would acquire both a version of the application that has these controls enabled, and one where the controls are disabled. This allows you to analyze the proper implementation of the controls, after which you can continue with the less-secure version for further tests.
+
+Of course, this is not always possible, and you may need to perform a black-box assessment on an application where all security controls are enabled. The section below shows you how you can circumvent certificate pinning for different applications.
 
 ##### Certificate Pinning
 
-If the app implements certificate pinning, C.509 certificates provided by an interception proxy will be declined and the app will refuse to make any requests through the proxy. To perform an efficient white box test, use a debug build with deactivated certificate pinning.
+Different ways of implementing certificate pinning have been explained in "Testing Custom Certificate Stores and Certificate Pinning". 
 
-There are several ways to bypass certificate pinning for a black box test, for example, [SSLUnpinning](https://github.com/ac-pm/SSLUnpinning_Xposed "SSLUnpinning") and [Android-SSL-TrustKiller](https://github.com/iSECPartners/Android-SSL-TrustKiller "Android-SSL-TrustKiller"). Certificate pinning can be bypassed within seconds, but only if the app uses the API functions that are covered for these tools. If the app is implementing SSL Pinning with a framework or library that those tools don't yet implement, the SSL Pinning must be manually patched and deactivated, which can be time-consuming.
+If the app implements certificate pinning, X.509 certificates provided by an intercepting proxy will be declined and the app will refuse to make any requests through the proxy. To perform an efficient white box test, use a debug build with deactivated certificate pinning.
 
-There are two ways to manually deactivate SSL Pinning:
-- Dynamic Patching with [Frida](https://www.frida.re/docs/android/ "Frida") or [ADBI](https://github.com/crmulliner/adbi "ADBI") while running the app
-- [Identifying the SSL Pinning logic in smali code, patching it, and reassembling the APK](https://serializethoughts.com/2016/08/18/bypassing-ssl-pinning-in-android-applications/ "Bypassing SSL Pinning in Android Applications")
+There are several ways to bypass certificate pinning for a black box test, depending on the frameworks available on the device:
 
-Deactivating SSL Pinning satisfies the prerequisites for dynamic analysis, after which the app's communication can be investigated.
+- Frida: [Objection](https://github.com/sensepost/objection "Objection")
+- Xposed: [TrustMeAlready](https://github.com/ViRb3/TrustMeAlready "TrustMeAlready"), [SSLUnpinning](https://github.com/ac-pm/SSLUnpinning_Xposed "SSLUnpinning")
+- Cydia Substrate: [Android-SSL-TrustKiller](https://github.com/iSECPartners/Android-SSL-TrustKiller "Android-SSL-TrustKiller")
+ 
+For most applications, certificate pinning can be bypassed within seconds, but only if the app uses the API functions that are covered for these tools. If the app is implementing SSL Pinning with a custom framework or library, the SSL Pinning must be manually patched and deactivated, which can be time-consuming.
 
-See the test case "Testing Custom Certificate Stores and Certificate Pinning" for more details.
+##### Bypass Custom Certificate Pinning Statically
+
+Somewhere in the application, both the endpoint and the certificate (or its hash) must be defined. After decompiling the application, you can search for:
+
+- Certificate hashes: `grep -ri "sha256\|sha1" ./smali`. Replace the identified hashes with the hash of your proxy's CA. Alternatively, if the hash is accompanied by a domain name, you can try modifying the domain name to a non-existing domain so that the original domain is not pinned. This works well on obfuscated OkHTTP implementations.
+- Certificate files: `find ./assets -type f \( -iname \*.cer -o -iname \*.crt \)`. Replace these files with your proxy's certificates, making sure they are in the correct format.
+
+If the application uses native libraries to implement network communication, further reverse engineering is needed. An example of such an approach can be found in the blog post [Identifying the SSL Pinning logic in smali code, patching it, and reassembling the APK](https://serializethoughts.com/2016/08/18/bypassing-ssl-pinning-in-android-applications/ "Bypassing SSL Pinning in Android Applications")
+
+After making these modifications, repackage the application using apktool and install it on your device.
+
+##### Bypass Custom Certificate Pinning Dynamically
+
+Bypassing the pinning logic dynamically makes it more convenient as there is no need to bypass any integrity checks and it's much faster to perform trial & error attempts.
+
+Finding the correct method to hook is typically the hardest part and can take quite some time depending on the level of obfuscation. As developers typically reuse existing libraries, it is a good approach to search for strings and license files that identify the used library. Once the library has been identified, examine the non-obfuscated source code to find methods which are suited for dynamic instrumentation.
+
+As an example, let's say that you find an application which uses an obfuscated OkHTTP3 library. The [documentation](https://square.github.io/okhttp/3.x/okhttp/ "OkHTTP3 documentation") shows that the CertificatePinner.Builder class is responsible for adding pins for specific domains. If you can modify the arguments to the [Builder.add method](https://square.github.io/okhttp/3.x/okhttp/okhttp3/CertificatePinner.Builder.html#add-java.lang.String-java.lang.String...- "Builder.add method"), you can change the hashes to the correct hashes belonging to your certificate. Finding the correct method can be done in either two ways:
+
+- Search for hashes and domain names as explained in the previous section. The actual pinning method will typically be used or defined in close proximity to these strings
+- Search for the method signature in the SMALI code
+
+For the Builder.add method, you can find the possible methods by running the following grep command: `grep -ri java/lang/String;\[Ljava/lang/String;)L ./`
+
+This command will search for all methods that take a string and a variable list of strings as arguments, and return a complex object. Depending on the size of the application, this may have one or multiple matches in the code.
+
+Hook each method with Frida and print the arguments. One of them will print out a domain name and a certificate hash, after which you can modify the arguments to circumvent the implemented pinning.
+
 
 ##### Root Detection
 
 An extensive list of root detection methods is presented in the "Testing Anti-Reversing Defenses on Android" chapter.
 
 For a typical mobile app security build, you'll usually want to test a debug build with root detection disabled. If such a build is not available for testing, you can disable root detection in a variety of ways that will be introduced later in this book.
+
+
+### References
+
+- Signing Manually (Android developer documentation) - https://developer.android.com/studio/publish/app-signing#signing-manually
+- Custom Trust - https://developer.android.com/training/articles/security-config#CustomTrust
+- Google Android Codelabs - https://codelabs.developers.google.com/codelabs/android-network-security-config/#3
+- Security Analyst’s Guide to Network Security Configuration in Android P - https://www.nowsecure.com/blog/2018/08/15/a-security-analysts-guide-to-network-security-configuration-in-android-p/
+
+#### Tools
+
+- Androbugs - https://github.com/AndroBugs/AndroBugs_Framework
+- Android-CertKiller - https://github.com/51j0/Android-CertKiller
+- Android tcpdump - https://www.androidtcpdump.com/
+- Android-SSL-TrustKiller - https://github.com/iSECPartners/Android-SSL-TrustKiller
+- Android Platform Tools - https://developer.android.com/studio/releases/platform-tools.html
+- Android Studio - https://developer.android.com/studio/index.html
+- Android developer documentation - https://developer.android.com/studio/publish/app-signing#signing-manually
+- Android 8.0 Behavior Changes - https://developer.android.com/about/versions/oreo/android-8.0-changes
+- Android 9.0 Behavior Changes - https://developer.android.com/about/versions/pie/android-9.0-changes-all#device-security-changes
+- apktool -https://ibotpeaches.github.io/Apktool/
+- apkx - https://github.com/b-mueller/apkx
+- Burp-non-HTTP-Extension - https://github.com/summitt/Burp-Non-HTTP-Extension
+- Burp Suite Professional - https://portswigger.net/burp/
+- Drozer - https://labs.mwrinfosecurity.com/tools/drozer/
+- Frida - https://www.frida.re/docs/android/
+- JAADAS - https://github.com/flankerhqd/JAADAS
+- Magisk Trust User Certs module - https://github.com/NVISO-BE/MagiskTrustUserCerts/releases
+- Mitm-relay - https://github.com/jrmdev/mitm_relay
+- Objection - https://github.com/sensepost/objection
+- OWASP ZAP - https://www.owasp.org/index.php/OWASP_Zed_Attack_Proxy_Project
+- QARK - https://github.com/linkedin/qark/
+- SDK tools - https://developer.android.com/studio/index.html#downloads
+- SSLUnpinning - https://github.com/ac-pm/SSLUnpinning_Xposed
+- Wireshark - https://www.wireshark.org/

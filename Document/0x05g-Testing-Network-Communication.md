@@ -1,4 +1,3 @@
-
 ## Android Network APIs
 
 ### Testing Endpoint Identify Verification
@@ -11,6 +10,8 @@ Two key issues should be addressed:
 - Determine whether the endpoint server presents the right certificate.
 
 Make sure that the hostname and the certificate itself are verified correctly. Examples and common pitfalls are available in the [official Android documentation](https://developer.android.com/training/articles/security-ssl.html "Android Documentation - SSL"). Search the code for examples of `TrustManager` and `HostnameVerifier` usage. In the sections below, you can find examples of the kind of insecure usage that you should look for.
+
+> Note that from Android 8 onward, there is no support for SSLv3 and HttpsURLConnection will no longer perform a fallback to an insecure TLS/SSL protocol.
 
 #### Static Analysis
 
@@ -122,11 +123,11 @@ The certificate can be pinned and hardcoded into the app or retrieved at the tim
 
 ##### Network Security Configuration
 
-To customize their network security settings in a safe, declarative configuration file without modifying app code, applications can use the [Network Security Configuration (NSC)](https://developer.android.com/training/articles/security-config.html "Network Security Configuration documentation") that Android provides for versions 7.0 and above.
+To customize their network security settings in a safe, declarative configuration file without modifying app code, applications can use the [Network Security Configuration](https://developer.android.com/training/articles/security-config.html "Network Security Configuration documentation") that Android provides for versions 7.0 and above.
 
-The Network Security Configuration feature can also be used to pin [declarative certificates](https://developer.android.com/training/articles/security-config.html#CertificatePinning "Certificate Pinning using Network Security Configuration") to specific domains. If an application uses the NSC feature, two things should be checked to identify the defined configuration:
+The Network Security Configuration can also be used to pin [declarative certificates](https://developer.android.com/training/articles/security-config.html#CertificatePinning "Certificate Pinning using Network Security Configuration") to specific domains. If an application uses this feature, two things should be checked to identify the defined configuration:
 
-1. Specification of the NSC file reference in the Android application manifest via the "android:networkSecurityConfig" attribute on the application tag:
+1. Specification of the file reference in the Android application manifest via the "android:networkSecurityConfig" attribute on the application tag:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -137,7 +138,7 @@ The Network Security Configuration feature can also be used to pin [declarative 
 </manifest>
 ```
 
-2. Contents of the NSC file stored in "res/xml/network_security_config.xml":
+2. Contents of the file stored in "res/xml/network_security_config.xml":
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -157,7 +158,9 @@ The Network Security Configuration feature can also be used to pin [declarative 
 </network-security-config>
 ```
 
-If an NSC configuration exists, the following event may be visible in the log:
+> The pin-set contains a set of public key pins. Each set can define an expiration date. When the expiration date is reached, the network communication will continue to work, but the Certificate Pinning will be disabled for the affected domains.
+
+If a configuration exists, the following event may be visible in the log:
 
 ```
 D/NetworkSecurityConfig: Using Network Security Config from resource network_security_config
@@ -169,7 +172,7 @@ If a certificate pinning validation check has failed, the following event will b
 I/X509Util: Failed to validate the certificate chain, error: Pin verification failed
 ```
 
-Using a decompiler (Ex. Jadx) or apktool we will be able to confirm if the \<pin\> entry is present in the network_security_config.xml file located in the /res/xml/ folder.
+Using a decompiler (e.g. jadx or apktool) we will be able to confirm if the \<pin\> entry is present in the network_security_config.xml file located in the /res/xml/ folder.
 
 ##### TrustManager
 
@@ -179,7 +182,7 @@ Implementing certificate pinning involves three main steps:
 - Make sure the certificate is in .bks format.
 - Pin the certificate to an instance of the default Apache Httpclient.
 
-To analyze the correct implementation of certificate pinning, the HTTP client should load the Keystore:
+To analyze the correct implementation of certificate pinning, the HTTP client should load the KeyStore:
 
 ```java
 InputStream in = resources.openRawResource(certificateRawResource);
@@ -187,13 +190,13 @@ keyStore = KeyStore.getInstance("BKS");
 keyStore.load(resourceStream, password);
 ```
 
-Once the Keystore has been loaded, we can use the TrustManager that trusts the CAs in our KeyStore:
+Once the KeyStore has been loaded, we can use the TrustManager that trusts the CAs in our KeyStore:
 
 ```java
 String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
 TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
 tmf.init(keyStore);
-Create an SSLContext that uses the TrustManager
+// Create an SSLContext that uses the TrustManager
 // SSLContext context = SSLContext.getInstance("TLS");
 sslContext.init(null, tmf.getTrustManagers(), null);
 ```
@@ -212,7 +215,7 @@ OkHttpClient client = new OkHttpClient.Builder()
         .build();
 ```
 
-Applications that use a WebView component may utilize the WebViewClient's event handler for some kind of "certificate pinning" of each request before the target resource is loaded. The following code shows an example verification of the Issuer DN of the certificate sent by the server:
+Applications that use a WebView component may utilize the WebViewClient's event handler for some kind of "certificate pinning" of each request before the target resource is loaded. The following code shows an example verification:
 
 ```java
 WebView myWebView = (WebView) findViewById(R.id.webview);
@@ -228,15 +231,15 @@ myWebView.setWebViewClient(new WebViewClient(){
         //Available information on SslCertificate class are "Issuer DN", "Subject DN" and validity date helpers
         SslCertificate serverCert = view.getCertificate();
         if(serverCert != null){
-            //Apply check on Issuer DN against expected one
-            SslCertificate.DName issuerDN = serverCert.getIssuedBy();
-            if(!this.expectedIssuerDN.equals(issuerDN.toString())){
+            //apply either certificate or public key pinning comparison here
                 //Throw exception to cancel resource loading...
             }
         }
     }
 });
 ```
+
+Alternatively, it is better to use an OkHttpClient with configured pins and let it act as a proxy overriding `shouldInterceptRequest` of the `WebViewClient`.
 
 ##### Xamarin Applications
 
@@ -249,7 +252,7 @@ Normally a function is created to check the certificate(s) and return the boolea
     public class MainActivity : Activity
     {
         // SupportedPublicKey - Hexadecimal value of the public key.
-        // Use GetPublicKeyString() method to determine the public key of the certificate we want to pin. Uncomment the debug code in the ValidateServerCertificate function a first time to determine the value to pin. 
+        // Use GetPublicKeyString() method to determine the public key of the certificate we want to pin. Uncomment the debug code in the ValidateServerCertificate function a first time to determine the value to pin.
         private const string SupportedPublicKey = "3082010A02820101009CD30CF05AE52E47B7725D3783B3686330EAD735261925E1BDBE35F170922FB7B84B4105ABA99E350858ECB12AC468870BA3E375E4E6F3A76271BA7981601FD7919A9FF3D0786771C8690E9591CFFEE699E9603C48CC7ECA4D7712249D471B5AEBB9EC1E37001C9CAC7BA705EACE4AEBBD41E53698B9CBFD6D3C9668DF232A42900C867467C87FA59AB8526114133F65E98287CBDBFA0E56F68689F3853F9786AFB0DC1AEF6B0D95167DC42BA065B299043675806BAC4AF31B9049782FA2964F2A20252904C674C0D031CD8F31389516BAA833B843F1B11FC3307FA27931133D2D36F8E3FCF2336AB93931C5AFC48D0D1D641633AAFA8429B6D40BC0D87DC3930203010001";
 
         private static bool ValidateServerCertificate(
@@ -270,7 +273,7 @@ Normally a function is created to check the certificate(s) and return the boolea
             base.OnCreate(savedInstanceState);
             SetContentView(Resource.Layout.Main);
             TesteAsync("https://security.claudio.pt");
-  
+
         }
 ```
 
@@ -289,9 +292,9 @@ Hybrid applications based on Cordova do not support Certificate Pinning natively
 The check() method is used to confirm the fingerprint and callbacks will determine the next steps.
 
 ```javascript
-  //Endpoint to verify against certiticate pinning.
+  // Endpoint to verify against certificate pinning.
   var server = "https://www.owasp.org";
-  //SHA256 Fingerprint (Can be obtained via "openssl s_client -connect hostname:443 | openssl x509 -noout -fingerprint -sha256"
+  // SHA256 Fingerprint (Can be obtained via "openssl s_client -connect hostname:443 | openssl x509 -noout -fingerprint -sha256"
   var fingerprint = "D8 EF 3C DF 7E F6 44 BA 04 EC D5 97 14 BB 00 4A 7A F5 26 63 53 87 4E 76 67 77 F0 F4 CC ED 67 B9";
 
   window.plugins.sslCertificateChecker.check(
@@ -315,7 +318,7 @@ The check() method is used to confirm the fingerprint and callbacks will determi
      }
    }
 ```
-After decompressing the APK file, Cordova/Phonegap files will be located in the /assets/www folder. The 'plugins' folder will give you the visibility of the plugins used. We will need to search for this methods in the Javascript code of the application to confirm its usage. 
+After decompressing the APK file, Cordova/Phonegap files will be located in the /assets/www folder. The 'plugins' folder will give you the visibility of the plugins used. We will need to search for this methods in the JavaScript code of the application to confirm its usage.
 
 #### Dynamic Analysis
 
@@ -326,7 +329,8 @@ For further information, please check the [OWASP certificate pinning guide](http
 ### Testing the Network Security Configuration settings
 
 #### Overview
-Network Security Configuration was introducted on Android 7 and lets apps customize their network security settings such as custom trust anchors and Certificate pinning.
+
+Network Security Configuration was introduced on Android 7 and lets apps customize their network security settings such as custom trust anchors and Certificate pinning.
 
 ##### Trust Anchors
 
@@ -334,16 +338,14 @@ When apps target API Levels 24+ and are running on an Android device with versio
 
 This protection can be bypassed by using a custom Network Security Configuration with a custom trust anchor indicating that the app will trust user supplied CA's.
 
-##### Pin-set Expiration Date
-
-Pin-set contain a set of public key pins. Each set can define a expiration date. When the expiration date is reached, the network communication will continue to work, but the Certificate Pinning will be disabled for the affected domains.
-
 #### Static Analysis
 
-The Network Security Configuration should be analysed to determine what settings are configured. The file is located inside the apk in the /res/xml/ folder with the name network_security_config.xml.
+Use a decompiler (e.g. jadx or apktool) to confirm the target SDK version. After decoding the the app you can look for the presence of `targetSDK` present in the file apktool.yml that was created in the output folder.
+
+The Network Security Configuration should be analyzed to determine what settings are configured. The file is located inside the APK in the /res/xml/ folder with the name network_security_config.xml.
 
 If there are custom <trust-anchors> present in a <base-config> or <domain-config>, that define a <certificates src="user"> the application will trust user supplied CA's for those particular domains or for all domains. Example:
-    
+
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
@@ -370,6 +372,7 @@ If there are custom <trust-anchors> present in a <base-config> or <domain-config
     </domain-config>
 </network-security-config>
 ```
+
 Is important to understand the precedence of entries. If a value is not set in a \<domain-config\> entry or in a parent \<domain-config\>, the configurations in place will be based on the \<base-config\>, and lastly if not defined in this entry, the default configuration will be used.
 
 The default configuration for apps targeting Android 9 (API level 28) and higher is as follows:
@@ -405,24 +408,12 @@ The default configuration for apps targeting Android 6.0 (API level 23) and lowe
 
 #### Dynamic Analysis
 
-In a scenario where we have the proxy root CA (Ex. Burp Suite) installed on the device, this particular app sets the targetSDK to Api level 24+ and is running on a Android device with version 7+, we should not be able to intercept the communication. If we are able to, this means that there is a bypass of this mechanism. 
+For dynamic analysis by using an interception proxy as Burp you can patch the Network Security Configuration file, as described in the "Setting up a Testing Environment for Android Apps" chapter, section "Bypassing the Network Security Configuration".
 
+There might still be scenarios where this is not needed and you can still do MiTM attacks without patching:
+- If the app is running on a Android device with Android version 7.0 onwards, but the app targets API levels below 24, it will not use the network security configuration, therefore the app will still trusting user supplied CA's.
+- If the app is running on a Android device with Android version 7.0 onwards and there is no custom Network Security Configuration implemented in the app.
 
-### Testing Default Network Security Configuration
-
-#### Overview
-As mentioned in the previous topic, apps that target API levels 24+, unless otherwise defined, will implement a default Network Security Configuration that no longer trust user supplied CA's.
-
-In a scenario that the app is running on a Android device with version 7+, but targets API levels below 24, it will not use this feature, therefore still trusting in user supplied CA's.
-
-#### Static Analysis
-
-* Use a decompiler (Ex. Jadx) to confirm the targetSDK present in the AndroidManifest.xml file
-* Use apktool to decode the app and confirm the targetSDK present in the file apktool.yml of the output folder.
-
-#### Dynamic Analysis
-
-In a scenario where we have the proxy root CA (Ex. Burp Suite) installed on the device, the app is running on a Android device with version 7+ and there is no custom Network Security Configuration implemented, this is an indicator that the targetSDK is set to API levels below 24, assuming that the app correctly validates certificates.
 
 ### Testing the Security Provider
 

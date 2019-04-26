@@ -58,7 +58,7 @@ Reverse engineering is the process of reconstructing the semantics of a compiled
 
 #### Using Disassemblers and Decompilers
 
-Disassemblers and decompilers allow you to translate an app's binary code or bytecode back into a more or less understandable format. By using these tools on native binaries, you can obtain assembler code that matches the architecture the app was compiled for. Android Java apps can be disassembled to Smali, which is an assembly language for the dex format used by dalvik, Android's Java VM. Smali assembly is also quite easily decompiled back to Java code.
+Disassemblers and decompilers allow you to translate an app's binary code or bytecode back into a more or less understandable format. By using these tools on native binaries, you can obtain assembler code that matches the architecture the app was compiled for. Android Java apps can be disassembled to smali, which is an assembly language for the dex format used by dalvik, Android's Java VM. smali assembly is also quite easily decompiled back to Java code.
 
 A wide range of tools and frameworks is available: expensive but convenient GUI tools, open source disassembling engines, reverse engineering frameworks, etc. Advanced usage instructions for any of these tools often easily fill a book of their own. The best way to get started is to simply pick a tool that fits your needs and budget and buy a well-reviewed user guide. We'll list some of the most popular tools in the OS-specific "Reverse Engineering and Tampering" chapters.
 
@@ -86,7 +86,7 @@ Running an app in the emulator gives you powerful ways to monitor and manipulate
 
 #### Custom Tooling with Reverse Engineering Frameworks
 
-Even though most professional GUI-based disassemblers feature scripting facilities and extensibility, they are simply not well-suited to solving particular problems. Reverse engineering frameworks allow you to perform and automate any kind of reversing task without depending on a heavy-weight GUI. Notably, most reversing frameworks are open source and/or available for free. Popular frameworks with support for mobile architectures include [Radare2](https://github.com/radare/radare2 "radare2") and [Angr](https://nilocunger.github.io).
+Even though most professional GUI-based disassemblers feature scripting facilities and extensibility, they are simply not well-suited to solving particular problems. Reverse engineering frameworks allow you to perform and automate any kind of reversing task without depending on a heavy-weight GUI. Notably, most reversing frameworks are open source and/or available for free. Popular frameworks with support for mobile architectures include [Radare2](https://github.com/radare/radare2 "radare2") and [Angr](https://github.com/angr/angr "Angr").
 
 ##### Example: Program Analysis with Symbolic/Concolic Execution
 

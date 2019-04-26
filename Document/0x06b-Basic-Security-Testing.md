@@ -36,7 +36,7 @@ End users often jailbreak their devices to tweak the iOS system's appearance, ad
 - root access to the file system
 - possibility of executing applications that haven't been signed by Apple (which includes many security tools)
 - unrestricted debugging and dynamic analysis
-- access to the Objective-C runtime
+- access to the Objective-C or Swift runtime
 
 #### Jailbreak Types
 
@@ -46,17 +46,17 @@ There are *tethered*, *semi-tethered*, *semi-untethered*, and *untethered* jailb
 
 - Semi-tethered jailbreaks can't be re-applied unless the device is connected to a computer during reboot. The device can also boot into non-jailbroken mode on its own.
 
-- Semi-untethered jailbreaks allow the device to boot on its own, but the kernel patches for disabling code signing aren't applied automatically. The user must re-jailbreak the device by starting an app or visiting a website.
+- Semi-untethered jailbreaks allow the device to boot on its own, but the kernel patches (or user-land modifications) for disabling code signing aren't applied automatically. The user must re-jailbreak the device by starting an app or visiting a website (not requiring a connection to a computer, hence the term untethered).
 
 - Untethered jailbreaks are the most popular choice for end users because they need to be applied only once, after which the device will be permanently jailbroken.
 
 #### Caveats and Considerations
 
-Jailbreaking an iOS device is becoming more and more complicated because Apple keeps hardening the system and patching the exploited vulnerabilities. Jailbreaking has become a very time-sensitive procedure because Apple stops signing these vulnerable versions relatively soon after releasing a fix (unless the versions are hardware-based vulnerabilities). This means that you can't downgrade to a specific iOS version once Apple stops signing the firmware.
+Jailbreaking an iOS device is becoming more and more complicated because Apple keeps hardening the system and patching the exploited vulnerabilities. Jailbreaking has become a very time-sensitive procedure because Apple stops signing these vulnerable versions relatively soon after releasing a fix (unless the jailbreak benefits from hardware-based vulnerabilities, such as the [limera1n exploit](https://www.theiphonewiki.com/wiki/Limera1n "limera1n exploit") affecting the BootROM of the iPhone 4 and iPad 1). This means that you can't downgrade to a specific iOS version once Apple stops signing the firmware.
 
-If you have a jailbroken device that you use for security testing, keep it as is unless you're 100% sure that you can re-jailbreak it after upgrading to the latest iOS version. Consider getting a spare device (which will be updated with every major iOS release) and waiting for a jailbreak to be released publicly. Apple is usually quick to release a patch once a jailbreak has been released publicly, so you have only a couple of days to downgrade to the affected iOS version and apply the jailbreak.
+If you have a jailbroken device that you use for security testing, keep it as is unless you're 100% sure that you can re-jailbreak it after upgrading to the latest iOS version. Consider getting one (or multiple) spare device(s) (which will be updated with every major iOS release) and waiting for a jailbreak to be released publicly. Apple is usually quick to release a patch once a jailbreak has been released publicly, so you have only a couple of days to downgrade (if it is still signed by Apple) to the affected iOS version and apply the jailbreak.
 
-iOS upgrades are based on a challenge-response process. The device will allow the OS installation only if the response to the challenge is signed by Apple. This is what researchers call a "signing window," and it is the reason you can't simply store the OTA firmware package you downloaded via iTunes and load it onto the device whenever you want to. During minor iOS upgrades, two versions may both be signed by Apple. This is the only situation in which you can downgrade the iOS device. You can check the current signing window and download OTA firmware from the [IPSW Downloads website](https://ipsw.me "IPSW Downloads").
+iOS upgrades are based on a challenge-response process (generating as a result the named SHSH blobs). The device will allow the OS installation only if the response to the challenge is signed by Apple. This is what researchers call a "signing window," and it is the reason you can't simply store the OTA firmware package you downloaded via iTunes and load it onto the device whenever you want to. During minor iOS upgrades, two versions may both be signed by Apple (the latest one, and the previous iOS version). This is the only situation in which you can downgrade the iOS device. You can check the current signing window and download OTA firmware from the [IPSW Downloads website](https://ipsw.me "IPSW Downloads").
 
 #### Which Jailbreaking Tool to Use
 
@@ -71,11 +71,11 @@ The iOS jailbreak scene evolves so rapidly that providing up-to-date instruction
 - [Redmond Pie](https://www.redmondpie.com/ "Redmone Pie")
 - [Reddit Jailbreak](https://www.reddit.com/r/jailbreak/ "Reddit Jailbreak")
 
-> Note that OWASP and the MSTG won't be responsible if you end up bricking your iOS device!
+> Note that any modification you make to your device is at your own risk. While jailbreaking is typically safe, things can go wrong and you may end up bricking your device. No other party except yourself can be held accountable for any damage.
 
 #### Dealing with Jailbreak Detection
 
-Some apps attempt to detect whether the iOS device on which they're running is jailbroken. This is because jailbreaking deactivates some of iOS' default security mechanisms. However, there are several ways to get around this detection, and we'll introduce them in the chapters "Reverse Engineering and Tampering on iOS" and "Testing Anti-Reversing Defenses on iOS."
+Some apps attempt to detect whether the iOS device on which they're running is jailbroken. This is because jailbreaking deactivates some of iOS' default security mechanisms. However, there are several ways to get around these detections, and we'll introduce them in the chapters "Reverse Engineering and Tampering on iOS" and "Testing Anti-Reversing Defenses on iOS."
 
 #### Jailbroken Device Setup
 
@@ -89,11 +89,11 @@ Once you've jailbroken your iOS device and Cydia has been installed (as shown in
 2. SSH into your iOS device.
   - The default users are `root` and `mobile`.
   - The default password is `alpine`.
-3. Change the default password for users `root` and `mobile`.
+3. Change the default password for both users `root` and `mobile`.
 4. Add the following repository to Cydia: `https://build.frida.re`.
 5. Install Frida from Cydia.
 
-Cydia allows you to manage repositories. One of the most popular repositories is BigBoss. If your Cydia installation isn't pre-configured with this repository, you can add it by navigating to Sources -> Edit, then clicking "Add" in the top left and entering the following URL:
+Cydia allows you to manage repositories. One of the most popular repositories is BigBoss, which contains various packages, such as the BigBoss Recommended Tools package. If your Cydia installation isn't pre-configured with this repository, you can add it by navigating to Sources -> Edit, then clicking "Add" in the top left and entering the following URL:
 
 ```
 http://apt.thebigboss.org/repofiles/cydia/
@@ -111,13 +111,13 @@ The following are some useful packages you can install from Cydia to get started
 - adv-cmds: Advanced command line. Includes finger, fingerd, last, lsvfs, md, and ps.
 - [IPA Installer Console](https://cydia.saurik.com/package/com.autopear.installipa/ "IPA Installer Console"): Tool for installing IPA application packages from the command line. Package name is `com.autopear.installipa`.
 - Class Dump: A command line tool for examining the Objective-C runtime information stored in Mach-O files.
-- Substrate: A platform that makes developing third-party iOS add-ons easier.
-- cycript: Cycript is an inlining, optimizing, Cycript-to-JavaScript compiler and immediate-mode console environment that can be injected into running processes.
+- Cydia or Mobile Substrate: A platform that makes developing third-party iOS add-ons easier via dynamic app manipulation or introspection.
+- cycript: Cycript is an inlining, optimizing, Cycript-to-JavaScript compiler and immediate-mode console environment that can be injected into running processes (assiciated to Substrate).
 - AppList: Allows developers to query the list of installed apps and provides a preference pane based on the list.
-- PreferenceLoader: A MobileSubstrate-based utility that allows developers to add entries to the Settings application, similar to the SettingsBundles that App Store apps use.
+- PreferenceLoader: A Mobile Substrate-based utility that allows developers to add entries to the Settings application, similar to the SettingsBundles that App Store apps use.
 - AppSync Unified: Allows you to sync and install unsigned iOS applications.
 
-Your workstation should have at least the following installed:
+Your analyst workstation should have at least the following installed:
 
 - an SSH client
 - an interception proxy. In this guide, we'll be using [BURP Suite](https://portswigger.net/burp "Burp Suite").
@@ -133,7 +133,7 @@ Other useful tools we'll be referring throughout the guide:
 
 The preferred method of statically analyzing iOS apps involves using the original Xcode project files. Ideally, you will be able to compile and debug the app to quickly identify any potential issues with the source code.
 
-Black box analysis of iOS apps without access to the original source code requires reverse engineering. For example, no decompilers are available for iOS apps, so a deep inspection requires you to read assembly code. We won't go into too much detail of assembly code in this chapter, but we will revisit the topic in the chapter "Reverse Engineering and Tampering on iOS."
+Black box analysis of iOS apps without access to the original source code requires reverse engineering. For example, no decompilers are available for iOS apps (although most commercial and open-source disassemblers can provide a pseudo-source code view of the binary), so a deep inspection requires you to read assembly code. We won't go into too much detail of assembly code in this chapter, but we will revisit the topic in the chapter "Reverse Engineering and Tampering on iOS."
 
 The static analysis instructions in the following chapters are based on the assumption that the source code is available.
 
@@ -141,12 +141,11 @@ The static analysis instructions in the following chapters are based on the assu
 
 Several automated tools for analyzing iOS apps are available; most of them are commercial tools. The free and open source tools [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF "Mobile Security Framework (MobSF)") and [Needle](https://github.com/mwrlabs/needle "Needle") have some static and dynamic analysis functionality. Additional tools are listed in the "Static Source Code Analysis" section of the "Testing Tools" appendix.
 
-Don't shy away from using automated scanners for your analysis-they help you pick low-hanging fruit and allow you to focus on the more interesting aspects of analysis, such as the business logic. Keep in mind that static analyzers may produce false positives and false negatives; always review the findings carefully.
+Don't shy away from using automated scanners for your analysis - they help you pick low-hanging fruit and allow you to focus on the more interesting aspects of analysis, such as the business logic. Keep in mind that static analyzers may produce false positives and false negatives; always review the findings carefully.
 
 ### Dynamic Analysis of Jailbroken Devices
 
-Life is easy with a jailbroken device: not only do you gain easy access to the app's sandbox, the lack of code signing allows you to use more powerful dynamic analysis techniques. On iOS, most dynamic analysis tools are based on Cydia Substrate, a framework for developing runtime patches that we will cover later. For basic API monitoring, you can get away with not knowing all the details of how Substrate works-you can simply use existing API monitoring tools.
-
+Life is easy with a jailbroken device: not only do you gain easy access to the app's sandbox, the lack of code signing allows you to use more powerful dynamic analysis techniques. On iOS, most dynamic analysis tools are based on Cydia Substrate, a framework for developing runtime patches that we will cover later, or Frida, a dynamic introspection tool. For basic API monitoring, you can get away with not knowing all the details of how Substrate or Frida work - you can simply use existing API monitoring tools.
 
 #### Needle
 
@@ -174,7 +173,7 @@ $ git clone https://github.com/mwrlabs/needle.git
 
 The following commands install the dependencies required to run Needle on macOS.
 
-```shell 
+```shell
 # Core dependencies
 $ brew install python
 $ brew install libxml2
@@ -229,7 +228,7 @@ The only prerequisite is a Jailbroken device, with the following packages instal
 
 To launch Needle, just open a console and type:
 
-```shell 
+```shell
 $ python needle.py
       __  _ _______ _______ ______         ______
       | \ | |______ |______ | \     |      |______
@@ -279,6 +278,16 @@ The tool has the following global options (list them via the `show options` comm
 - **SAVE_HISTORY**: If set to "true," the command history will persist across sessions.
 - **VERBOSE, DEBUG**: If set to "true," this will enable verbose and debug logging, respectively.
 
+**Troubleshooting**
+
+In order to use the modules in Needle, you may have to install its dependencies. Use this command in Needle:
+
+```shell
+use device/dependency_installer
+
+run
+```
+Other modules may prompt you the `apt-get` command has not been installed. To get `apt-get`, go to your Cydia and look for  `CyDelete` and install it.
 
 #### SSH Connection via USB
 
@@ -303,6 +312,37 @@ iPhone:~ root#
 ```
 
 You can also connect to your iPhone's USB via [Needle](https://labs.mwrinfosecurity.com/blog/needle-how-to/ "Needle").
+
+#### Using Burp via USB on a jailbroken device
+
+We already know now that we can use iproxy to use SSH via USB. The next step would be to use the SSH connection to route our traffic to Burp that is running on our computer. Let's get started:
+
+1. First we need to create the SSH connection
+
+```bash
+$ iproxy 2222 22
+waiting for connection
+```
+
+2. The next step is to make a remote port forwarding of port 8080 on the iOS device to the localhost interface on our computer to port 8080.
+
+```bash
+ssh -R 8080:localhost:8080 root@localhost -p 2222
+```
+
+3. You should be able to reach now Burp on your iOS device. Just open Safari and go to 127.0.0.1:8080 and you should see the Burp Suite Page. This would also be a good time to [install the CA certificate](https://support.portswigger.net/customer/portal/articles/1841109-installing-burp-s-ca-certificate-in-an-ios-device "Installing Burp's CA Certificate in an iOS Device") of Burp on your iOS device.
+
+4. The last step would be to set the proxy globally on your iOS device.
+- Go to Settings
+- Wi-Fi
+- Connect to **any** Wi-Fi (you can literally connect to any Wi-Fi as the traffic for port 80 and 443 will be routed through USB, as we are just using the Proxy Setting in the Wi-Fi so we can set a global Proxy)
+- Once connected click on the small blue icon on the right side of the connect Wi-Fi
+- Configure your Proxy by selecting Manual
+- Type in 127.0.0.1 as Server
+- Type in 8080 as Port
+
+Open Safari and go to any webpage, you should see now the traffic in Burp. Thanks @hweisheimer for the [initial idea](https://twitter.com/hweisheimer/status/1095383526885724161 "Port Forwarding via USB on iOS")!
+
 
 #### App Folder Structure
 
@@ -398,7 +438,7 @@ Note that this binary is signed with a self-signed certificate that has a "wildc
 If you haven't already done so, you need to install the Frida Python package on your host machine:
 
 ```shell
-$ pip install frida
+$ pip install frida-tools
 ```
 
 To connect Frida to an iOS app, you need a way to inject the Frida runtime into that app. This is easy to do on a jailbroken device: just install `frida-server` through Cydia. Once it has been installed, the Frida server will automatically run with root privileges, allowing you to easily inject code into any process.
@@ -535,18 +575,18 @@ Burp Suite is an integrated platform for security testing mobile and web applica
 
 Setting up Burp to proxy your traffic is pretty straightforward. We assume that you have an iOS device and workstation connected to a Wi-Fi network that permits client-to-client traffic. If client-to-client traffic is not permitted, you can use usbmuxd to connect to Burp via USB.
 
-Portswigger provides a good [tutorial on setting up an iOS device to work with Burp](https://support.portswigger.net/customer/portal/articles/1841108-configuring-an-ios-device-to-work-with-burp "Configuring an iOS Device to Work With Burp") and a [tutorial on installing Burp's CA certificate to an iOS device ](https://support.portswigger.net/customer/portal/articles/1841109-installing-burp-s-ca-certificate-in-an-ios-device "Installing Burp's CA Certificate in an iOS Device").
+PortSwigger provides a good [tutorial on setting up an iOS device to work with Burp](https://support.portswigger.net/customer/portal/articles/1841108-configuring-an-ios-device-to-work-with-burp "Configuring an iOS Device to Work With Burp") and a [tutorial on installing Burp's CA certificate to an iOS device ](https://support.portswigger.net/customer/portal/articles/1841109-installing-burp-s-ca-certificate-in-an-ios-device "Installing Burp's CA Certificate in an iOS Device").
 
 #### Bypassing Certificate Pinning
 
-`[SSL Kill Switch 2](https://github.com/nabla-c0d3/ssl-kill-switch2 "SSL Kill Switch 2")` is one way to disable certificate pinning. It can be installed via the Cydia store. It will hook on to all high-level API calls and bypass certificate pinning.
+"[SSL Kill Switch 2](https://github.com/nabla-c0d3/ssl-kill-switch2 "SSL Kill Switch 2")" is one way to disable certificate pinning. It can be installed via the Cydia store. It will hook on to all high-level API calls and bypass certificate pinning.
 
 The Burp Suite app "[Mobile Assistant](https://portswigger.net/burp/help/mobile_testing_using_mobile_assistant.html "Using Burp Suite Mobile Assistant")" can also be used to bypass certificate pinning.
 
 In some cases, certificate pinning is tricky to bypass. Look for the following when you can access the source code and recompile the app:
 
 - the API calls `NSURLSession`, `CFStream`, and `AFNetworking`
-- methods/strings containing words like "pinning," "X509," "Certificate," etc.
+- methods/strings containing words like "pinning," "X.509," "Certificate," etc.
 
 If you don't have access to the source, you can try binary patching or runtime manipulation:
 
@@ -555,6 +595,14 @@ If you don't have access to the source, you can try binary patching or runtime m
 - Sometimes, the certificate is a file in the application bundle. Replacing the certificate with Burp's certificate may be sufficient, but beware the certificate's SHA sum. If it's hardcoded into the binary, you must replace it too!
 
 Certificate pinning is a good security practice and should be used for all applications that handle sensitive information. [EFF's Observatory](https://www.eff.org/pl/observatory) lists the root and intermediate CAs that major operating systems automatically trust. Please refer to the [map of the roughly 650 organizations that are Certificate Authorities Mozilla or Microsoft trust (directly or indirectly)](https://www.eff.org/files/colour_map_of_CAs.pdf "Map of the 650-odd organizations that function as Certificate Authorities trusted (directly or indirectly) by Mozilla or Microsoft"). Use certificate pinning if you don't trust at least one of these CAs.
+
+It is also possible to bypass SSL Pinning on non-jailbroken devices by using Frida and objection. As a prerequisite the iOS app would need to be repackaged and signed, which can be automated through objection (please take note that this can only be done on macOS with Xcode). For detailed information please visit the objection GitHub Wiki on [how to repackage](https://github.com/sensepost/objection/wiki/Patching-iOS-Applications "Patching iOS Applications"). By using the following command in objection you can disable SSL Pinning:
+
+```
+# ios sslpinning disable
+```
+
+See also the [GitHub Page](https://github.com/sensepost/objection#ssl-pinning-bypass-running-for-an-ios-application "Disable SSL Pinning in iOS" )
 
 If you want to get more details about white box testing and typical code patterns, refer to "iOS Application Security" by David Thiel. It contains descriptions and code snippets illustrating the most common certificate pinning techniques.
 
@@ -595,6 +643,24 @@ Sometimes an application can require to be used on an iPad device. If you only h
 
 It is important to note that changing this value will break the original signature of the IPA file so you need to re-sign the IPA, after the update, in order to install it on a device on which the signature validation has not been disabled.
 
-This bypass might not work if the application requires capabilities that are specific to modern iPads while your iphone or iPod is a bit older.
+This bypass might not work if the application requires capabilities that are specific to modern iPads while your iPhone or iPod is a bit older.
 
 Possible values for the property [UIDeviceFamily](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/iPhoneOSKeys.html#//apple_ref/doc/uid/TP40009252-SW11 "UIDeviceFamily property").
+
+
+### References (Tools)
+
+- Burp Suite - https://portswigger.net/burp/communitydownload
+- Frida - https://www.frida.re
+- IDB - https://www.idbtool.com
+- Introspy - https://github.com/iSECPartners/Introspy-iOS
+- ipainstaller - https://github.com/autopear/ipainstaller
+- iProxy - https://iphonedevwiki.net/index.php/SSH_Over_USB
+- Keychain-dumper - https://github.com/ptoomey3/Keychain-Dumper/
+- MobSF - https://github.com/MobSF/Mobile-Security-Framework-MobSF
+- Needle - https://github.com/mwrlabs/needle
+- Objection - https://github.com/sensepost/objection
+- SSL Kill Switch 2 - https://github.com/nabla-c0d3/ssl-kill-switch2
+- Usbmuxd - https://github.com/libimobiledevice/usbmuxd
+- Wireshark - https://www.wireshark.org/download.html
+- Xcode - https://developer.apple.com/xcode/

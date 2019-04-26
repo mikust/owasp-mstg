@@ -61,14 +61,14 @@ Data stored in the Keychain is protected via a class structure that is similar t
 - `kSecAccessControlDevicePasscode`: Access the item via a passcode.
 - `kSecAccessControlTouch IDAny`: Access the item via one of the fingerprints registered to Touch ID. Adding or removing a fingerprint won't invalidate the item.
 - `kSecAccessControlTouch IDCurrentSet`: Access the item via one of the fingerprints registered to Touch ID. Adding or removing a fingerprint _will_ invalidate the item.
-- `kSecAccessControlUserPresence`: Access the item via either one of the registered fingerprints (using Touch ID) or fallback to the passcode.
+- `kSecAccessControlUserPresence`: Access the item via either one of the registered fingerprints (using Touch ID) or default to the passcode.
 
 Please note that keys secured by Touch ID (via `kSecAccessControlTouch IDCurrentSet` or `kSecAccessControlTouch IDAny`) are protected by the Secure Enclave: The Keychain holds a token only, not the actual key. The key resides in the Secure Enclave.
 
 Starting with iOS 9, you can do ECC-based signing operations in the Secure Enclave. In that scenario, the private key and the cryptographic operations reside within the Secure Enclave. See the static analysis section for more info on creating the ECC keys.
 iOS 9 supports only 256-bit ECC. Furthermore, you need to store the public key in the Keychain because it can't be stored in the Secure Enclave. After the key is created, you can use the `kSecAttrKeyType` to indicate the type of algorithm you want to use the key with.
 
-In case you want to use these mechanisms, it is recommended to test whether the passcode has been set. In iOS 8, you will need to check whether you can read/write from an item in the Keychain protected by the `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly` attribute. From iOS 9 onward you can check whether a losckscreen is set, using `LAContext`:
+In case you want to use these mechanisms, it is recommended to test whether the passcode has been set. In iOS 8, you will need to check whether you can read/write from an item in the Keychain protected by the `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly` attribute. From iOS 9 onward you can check whether a lock screen is set, using `LAContext`:
 
 ```swift
 
@@ -206,11 +206,31 @@ The following example shows how to create a securely encrypted file using the `c
 
 [`Core Data`](https://developer.apple.com/library/content/documentation/Cocoa/Conceptual/CoreData/nsfetchedresultscontroller.html#//apple_ref/doc/uid/TP40001075-CH8-SW1 "Core Data iOS") is a framework for managing the model layer of objects in your application. It provides general and automated solutions to common tasks associated with object life cycles and object graph management, including persistence. [Core Data can use SQLite as its persistent store](https://cocoacasts.com/what-is-the-difference-between-core-data-and-sqlite/ "What Is the Difference Between Core Data and SQLite"), but the framework itself is not a database.
 
-CoreData does not encrypt it's data by default. As part of a research project (iMAS) from the MITRE Corporation, that was focused on open source iOS security controls, an additional encryption layer can be added to CoreData. See the [Github Repo](https://github.com/project-imas/encrypted-core-data "Encrypted Core Data SQLite Store") for more details.
+CoreData does not encrypt it's data by default. As part of a research project (iMAS) from the MITRE Corporation, that was focused on open source iOS security controls, an additional encryption layer can be added to CoreData. See the [GitHub Repo](https://github.com/project-imas/encrypted-core-data "Encrypted Core Data SQLite Store") for more details.
 
 ##### SQLite Databases
 
 The SQLite 3 library must be added to an app if the app is to use SQLite. This library is a C++ wrapper that provides an API for the SQLite commands.
+
+##### Firebase Real-time Databases
+
+Firebase is a development platform with more than 15 products, and one of them is Firebase Real-time Database. It can be leveraged by application developers to store and sync data with a NoSQL cloud-hosted database. The data is stored as JSON and is synchronized in real-time to every connected client and also remains available even when the application goes offline.
+
+###### Identifying Misconfigured Firebase Instance
+
+In Jan 2018, [Appthority Mobile Threat Team (MTT)](https://cdn2.hubspot.net/hubfs/436053/Appthority%20Q2-2018%20MTR%20Unsecured%20Firebase%20Databases.pdf "Unsecured Firebase Databases: Exposing Sensitive Data via Thousands of Mobile Apps") performed security research on insecure backend services connecting to mobile applications. They discovered a misconfiguration in Firebase, which is one of the top 10 most popular data stores which could allow attackers to retrieve all the unprotected data hosted on the cloud server. The team performed the research on 2 Million+ mobile applications and found that the around 9% of Android applications and almost half (47%) of iOS apps that connect to a Firebase database were vulnerable.
+
+The misconfigured Firebase instance can be identified by making the following network call:
+
+_https://\<firebaseProjectName\>.firebaseio.com/.json_
+
+The _firebaseProjectName_ can be retrieved from the property list(.plist) file. For example, _PROJECT_ID_ key stores the corresponding Firebase project name in _GoogleService-Info.plist_ file.
+
+Alternatively, the analysts can use [Firebase Scanner](https://github.com/shivsahni/FireBaseScanner, "Firebase Scanner"), a python script that automates the task above as shown below:
+
+```
+python FirebaseScanner.py -f <commaSeperatedFirebaseProjectNames>
+```
 
 ##### Realm databases
 
@@ -415,9 +435,14 @@ A generalized approach to this issue is to use a define to enable `NSLog` statem
 
 Navigate to a screen that displays input fields that take sensitive user information. Two methods apply to checking log files for sensitive data:
 
-1. Connect to the iOS device and execute the following command:
+1. Connect to the iOS device and use one of the following options:
+- Install tail via the Core Utilities from Cydia and run the following command:
 ```shell
 $ tail -f /var/log/syslog
+```
+- Install ondeviceconsole via cydia.suarik.com and run the following command:
+```shell
+$ ondeviceconsole
 ```
 
 2. Connect your iOS device via USB and launch Xcode. Navigate to Window > Devices and Simulators, select your device and then the Open Console option (as of Xcode 9).
@@ -489,6 +514,38 @@ If a jailbroken iPhone is available, execute the following steps:
 `/private/var/mobile/Library/Keyboard/`
 4. Look for sensitive data, such as username, passwords, email addresses, and credit card numbers. If the sensitive data can be obtained via the keyboard cache file, the app fails this test.
 
+With Needle:
+
+```
+[needle] > use storage/caching/keyboard_autocomplete
+[needle] > run
+
+[*] Checking connection with device...
+[+] Already connected to: 142.16.24.31
+[*] Running strings over keyboard autocomplete databases...
+[+] The following content has been found:
+	DynamicDictionary-5
+	check
+	darw
+	Frida
+	frid
+	gawk
+	iasdasdt11
+	installdeopbear
+	Minh
+	mter
+	needle
+	openssl
+	openss
+	produce
+	python
+	truchq
+	wallpaper
+	DynamicDictionary-5
+[*] Saving output to file: /home/phanvanloc/.needle/output/keyboard_autocomplete.txt
+
+```
+
 ```objc
 UITextField *textField = [ [ UITextField alloc ] initWithFrame: frame ];
 textField.autocorrectionType = UITextAutocorrectionTypeNo;
@@ -518,7 +575,7 @@ The following section summarizes keywords that you should look for to identify I
 
 ##### XPC Services
 
-Several classes may be to implement the NSXPCConnection API:
+Several classes may be used to implement the NSXPCConnection API:
 
 - NSXPCConnection
 - NSXPCInterface
@@ -709,7 +766,7 @@ Screenshot caching vulnerabilities can also be detected with Needle. This is dem
 
 If the application caches the sensitive information in a screenshot, the app fails this test.
 
-You should have a default screenshot to be cached whenever the application enters the background.
+The application should show a default image as the top view element when the application enters the background, so that the default image will be cached and not the sensitive information that was displayed.
 
 ### Testing Memory for Sensitive Data
 
@@ -819,6 +876,8 @@ libdyld.dylib                     0x185c81000  20480 (20.0 KiB)     /usr/lib/sys
 
 ##### Fridump (No Jailbreak needed)
 
+To use Fridump you need to have either a jailbroken/rooted device with Frida-server installed, or build the original application with the Frida library attached instructions on [Frida’s site](https://www.frida.re/docs/ios/)
+
 The original version of Fridump is no longer maintained, and the tool works only with Python 2. The latest Python version (3.x) should be used for Frida, so Fridump doesn't work out of the box.
 
 If you're getting the following error message despite your iOS device being connected via USB, checkout [Fridump with the fix for Python 3](https://github.com/sushi2k/fridump "Fridump for Python3").
@@ -878,8 +937,8 @@ When you add the `-s` flag, all strings are extracted from the dumped raw memory
 
 #### OWASP Mobile Top 10 2016
 
-- M1 - Improper Platform Usage
-- M2 - Insecure Data Storage
+- M1 - Improper Platform Usage - https://www.owasp.org/index.php/Mobile_Top_10_2016-M1-Improper_Platform_Usage
+- M2 - Insecure Data Storage - https://www.owasp.org/index.php/Mobile_Top_10_2016-M2-Insecure_Data_Storage
 
 #### OWASP MASVS
 
@@ -916,3 +975,8 @@ When you add the `-s` flag, all strings are extracted from the dumped raw memory
 - [objection](https://github.com/sensepost/objection "objection")
 - [OWASP ZAP](https://www.owasp.org/index.php/OWASP_Zed_Attack_Proxy_Project)
 - [Burp Suite Professional](https://portswigger.net/burp)
+- [Firebase Scanner](https://github.com/shivsahni/FireBaseScanner "Firebase Misconfiguration Scanner")
+
+#### Others
+
+- Appthority Mobile Threat Team Research Paper - https://cdn2.hubspot.net/hubfs/436053/Appthority%20Q2-2018%20MTR%20Unsecured%20Firebase%20Databases.pdf

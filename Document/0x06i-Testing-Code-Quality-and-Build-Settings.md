@@ -6,7 +6,7 @@
 
 Code signing your app assures users that the app has a known source and hasn't been modified since it was last signed. Before your app can integrate app services, be installed on a device, or be submitted to the App Store, it must be signed with a certificate issued by Apple. For more information on how to request certificates and code sign your apps, review the [App Distribution Guide.](https://developer.apple.com/library/content/documentation/IDEs/Conceptual/AppDistributionGuide/Introduction/Introduction.html "App Distribution Guide")
 
-You can retrieve the signing certificate information from the application's .app file with [codesign.](https://developer.apple.com/legacy/library/documentation/Darwin/Reference/ManPages/man1/codesign.1.html) Codesign is used to create, check, and display code signatures, as well as inquire into the dynamic status of signed code in the system.
+You can retrieve the signing certificate information from the application's .app file with [codesign.](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html) Codesign is used to create, check, and display code signatures, as well as inquire into the dynamic status of signed code in the system.
 
 After you get the application's .ipa file, re-save it as a ZIP file and decompress the ZIP file. Navigate to the Payload directory, where the application's .app file will be.
 
@@ -33,6 +33,30 @@ TeamIdentifier=8LAMR92KJ8
 Sealed Resources version=2 rules=12 files=1410
 Internal requirements count=1 size=176
 ```
+
+### Determining Whether the App is Debuggable
+
+#### Overview
+
+Debugging iOS applications can be done using Xcode, which embeds a powerful debugger called lldb. Lldb is the default debugger since Xcode5 where it replaced GNU tools like gdb and is fully integrated in the development environment. While debugging is a useful feature when developing an app, it has to be turned off before releasing apps to the App Store or within an enterprise program.
+
+Generating an app in Build or Release mode depends on build settings in Xcode; when an app is generated in Debug mode, a DEBUG flag is inserted in the generated files.
+
+#### Static Analysis
+
+At first you need to determine the mode in which your app is to be generated to check the flags in the environment:
+- Select the build settings of the project
+- Under 'Apple LVM - Preprocessing' and 'Preprocessor Macros', make sure 'DEBUG' or 'DEBUG_MODE' is not selected (Objective-C)
+- Make sure that the "Debug executable" option is not selected.
+- Or in the 'Swift Compiler - Custom Flags' section / 'Other Swift Flags', make sure the '-D DEBUG' entry does not exist.
+
+
+#### Dynamic Analysis
+
+Check whether you can attach a debugger directly, using Xcode. Next, check if you can debug the app on a jailbroken device after Clutching it. This is done using the debug-server which comes from the BigBoss repository at Cydia.
+
+Note: if the application is equipped with anti-reverse engineering controls, then the debugger can be detected and stopped.
+
 
 ### Finding Debugging Symbols
 
@@ -363,7 +387,7 @@ IDB automates the processes of checking for stack canary and PIE support. Select
 
 iOS applications often make use of third party libraries. These third party libraries accelerate development as the developer has to write less code in order to solve a problem. There are two categories of libraries:
 - Libraries that are not (or should not) be packed within the actual production application, such as `OHHTTPStubs` used for testing.
-- Libraries that are packed within the actual production application, such as `Alomofire`.
+- Libraries that are packed within the actual production application, such as `Alamofire`.
 
 These libraries can have the following two classes of unwanted side-effects:
 - A library can contain a vulnerability, which will make the application vulnerable. A good example is `AFNetworking` version 2.5.1, which contained a bug that disabled certificate validation. This vulnerability would allow attackers to execute man-in-the-middle attacks against apps that are using the library to connect to their APIs.
@@ -378,7 +402,7 @@ Please note that this issue can hold on multiple levels: When you use webviews w
 
 In order to ensure that the libraries used by the apps are not carrying vulnerabilities, one can best check the dependencies installed by CocoaPods or Carthage.
 
-In case CocoaPods is used for managing third party dependencies, the following steps can be taken to analyse the third party libraries for vulnerabilities:
+In case CocoaPods is used for managing third party dependencies, the following steps can be taken to analyze the third party libraries for vulnerabilities:
 
 1. At the root of the project, where the Podfile is located, execute the following commands:
 ``` sh
@@ -386,7 +410,7 @@ $ sudo gem install CocoaPods
 $ pod install
 ```
 
-2. Now that the dependency tree has bene built, you can create an overview of the dependencies and their versions by running the following commands:
+2. Now that the dependency tree has been built, you can create an overview of the dependencies and their versions by running the following commands:
 ```sh
 $ sudo gem install CocoaPods-dependencies
 $ pod dependencies
@@ -399,7 +423,7 @@ $ pod dependencies
 2. If the project uses CocaoPods in combination with Objective-C, SourceClear can be used.
 3. Using CocoaPods with `http` based links instead of `https` might allow for man-in-the-middle attacks during the download of the dependency, which might allow the attacker to replace (parts of) the library you download with other content. Therefore: always use `https`.
 
-In case Carthage is used for third party dependencies, then the following steps can be taken to analyse the third party libraries for vulnerabilities:
+In case Carthage is used for third party dependencies, then the following steps can be taken to analyze the third party libraries for vulnerabilities:
 1. At the root of the project, where the Cartfile is located, type
 ```sh
 $ brew install carthage
@@ -412,13 +436,13 @@ $ carthage update --platform iOS
 
 When a library is found to contain vulnerabilities, then the following reasoning applies:
 - Is the library packaged with the application? Then check whether the library has a version in which the vulnerability is patched. If not, check whether the vulnerability actually affects the application. If that is the case or might be the case in the future, then look for an alternative which provides similar functionality, but without the vulnerabilities.
-- Is the library not packaged with the application? See if there is a patched version in which the vulnerability is fixed. If this is not the case, check if the  implications of the vulnerability for the build-proces. Could the vulnerability impede a build or weaken the security of the build-pipeline? Then try looking for an alternative in which the vulnerability is fixed.
+- Is the library not packaged with the application? See if there is a patched version in which the vulnerability is fixed. If this is not the case, check if the  implications of the vulnerability for the build process. Could the vulnerability impede a build or weaken the security of the build-pipeline? Then try looking for an alternative in which the vulnerability is fixed.
 
 In case frameworks are added manually as linked libraries:
 1. Open the xcodeproj file and check the project properties.
 2. Go to the tab "Build Phases" and check the entries in "Link Binary With Libraries" for any of the libraries. See earlier sections on how to obtain similar information using [MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF "MobSF").
 
-In the case of copy-pasted sources: search the headerfiles (in case of using Objective-C) and otherwise the Swift files for known methodnames for known libraries.
+In the case of copy-pasted sources: search the header files (in case of using Objective-C) and otherwise the Swift files for known method names for known libraries.
 
 Lastly, please note that for hybrid applications, one will have to check the JavaScript dependencies with RetireJS. Similarly for Xamarin, one will have to check the C# dependencies.
 
@@ -461,25 +485,30 @@ After you obtain the library and Clutched it (e.g. removed the DRM), you can run
 $ otool -L <Executable>
 ```
 
-However, these do not include all the libraries being used. Next, with Class-dump (for Objective-C) you can generate a subset of the headerfiles used and derive which libraries are involved. But not detect the version of the library.
+However, these do not include all the libraries being used. Next, with Class-dump (for Objective-C) you can generate a subset of the header files used and derive which libraries are involved. But not detect the version of the library.
 
 ```shell
 $ ./class-dump <Executable> -r
 ```
 
+
+
 ### References
 
 #### OWASP Mobile Top 10 2016
 
--	M7 - Client Code Quality - https://www.owasp.org/index.php/Mobile_Top_10_2016-M7-Poor_Code_Quality
+- M7 - Poor Code Quality - https://www.owasp.org/index.php/Mobile_Top_10_2016-M7-Poor_Code_Quality
 
 #### OWASP MASVS
 
 - V7.1: "The app is signed and provisioned with a valid certificate."
+- V7.2: "The app has been built in release mode, with settings appropriate for a release build (e.g. non-debuggable)."
+- V7.3: "Debugging symbols have been removed from native binaries."
 - V7.4: "Debugging code has been removed, and the app does not log verbose errors or debugging messages."
 - V7.5: "All third party components used by the mobile app, such as libraries and frameworks, are identified, and checked for known vulnerabilities."
 - V7.6: "The app catches and handles possible exceptions."
 - V7.7: "Error handling logic in security controls denies access by default."
+- V7.8: "In unmanaged code, memory is allocated, freed and used securely."
 - V7.9: "Free security features offered by the toolchain, such as byte-code minification, stack protection, PIE support and automatic reference counting, are activated."
 
 ##### CWE

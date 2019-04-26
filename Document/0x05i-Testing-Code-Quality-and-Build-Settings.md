@@ -10,18 +10,22 @@ When an APK is signed, a public-key certificate is attached to it. This certific
 
 The [final release build](https://developer.android.com/studio/publish/app-signing.html "Android Application Signing") of an app must be signed with a valid release key. In Android Studio, the app can be signed manually or via creation of a signing configuration that's assigned to the release build type.
 
-All app updates on Android need to be signed with the same certificate, so a [validity period of 25 years or more is recommended](https://developer.android.com/studio/publish/app-signing#considerations "Android Signing Considerations"). Apps published on Google Play must be signed with a key that that has a validity period ending after October 22th, 2033.
+Prior Android Pie all app updates on Android need to be signed with the same certificate, so a [validity period of 25 years or more is recommended](https://developer.android.com/studio/publish/app-signing#considerations "Android Signing Considerations"). Apps published on Google Play must be signed with a key that that has a validity period ending after October 22th, 2033.
 
-Two APK signing schemes are available:
+Three APK signing schemes are available:
 - JAR signing (v1 scheme),
-- APK Signature Scheme v2 (v2 scheme).
+- APK Signature Scheme v2 (v2 scheme),
+- APK Signature Scheme v3 (v3 scheme).
 
-The v2 signature, which is supported by Android 7.0 and above, offers improved security and performance. Release builds should always be signed via *both* schemes.
+The v2 signature, which is supported by Android 7.0 and above, offers improved security and performance compared to v1 scheme.
+The V3 signature, which is supported by Android 9.0 and above, gives apps the ability to change  their signing keys as part of an APK update. This functionality assures compatibility and apps continuous availibility by allowing both the new and the old keys to be used.
+
+For each signing scheme the release builds should always be signed via all its previous schemes as well. 
 
 
 #### Static Analysis
 
-Make sure that the release build has been signed via both the v1 and v2 schemes and that the code-signing certificate in the APK belongs to the developer.
+Make sure that the release build has been signed via both the v1 and v2 schemes for Android 7 and above and via all the three schemes for android 9 and above, and that the code-signing certificate in the APK belongs to the developer.
 
 APK signatures can be verified with the `apksigner` tool. It is located at `[SDK-Path]/build-tools/[version]`.
 
@@ -30,6 +34,7 @@ $ apksigner verify --verbose Desktop/example.apk
 Verifies
 Verified using v1 scheme (JAR signing): true
 Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
 Number of signers: 1
 ```
 
@@ -38,23 +43,26 @@ The contents of the signing certificate can be examined with `jarsigner`. Note t
 The output for an APK signed with a debug certificate is shown below:
 
 ```shell
+
 $ jarsigner -verify -verbose -certs example.apk
 
 sm     11116 Fri Nov 11 12:07:48 ICT 2016 AndroidManifest.xml
 
       X.509, CN=Android Debug, O=Android, C=US
       [certificate is valid from 3/24/16 9:18 AM to 8/10/43 9:18 AM]
-      [CertPath not validated: Path doesn't chain with any of the trust anchors]
+      [CertPath not validated: Path doesn\'t chain with any of the trust anchors]
 (...)
+
 ```
 
 Ignore the "CertPath not validated" error. This error occurs with Java SDK 7 and above. Instead of `jarsigner`, you can rely on the `apksigner` to verify the certificate chain.
 
-The signing configuration can be managed through Android Studio or the `signingConfig` block in `build.gradle`. To activate both the v1 and v2 schemes, the following values must be set:
+The signing configuration can be managed through Android Studio or the `signingConfig` block in `build.gradle`. To activate both the v1 and v2 and v3 schemes, the following values must be set:
 
 ```
 v1SigningEnabled true
 v2SigningEnabled true
+v3SigningEnabled true
 ```
 
 Several best practices for [configuring the app for release](https://developer.android.com/tools/publishing/preparing.html#publishing-configure "Best Practices for configuring an Android App for Release") are available in the official Android developer documentation.
@@ -99,7 +107,7 @@ Attack Surface:
 
 To scan for all debuggable applications on a device, use the `app.package.debuggable` module:
 
-```
+```shell
 dz> run app.package.debuggable
 Package: com.mwr.dz
   UID: 10083
@@ -191,7 +199,7 @@ Dynamic symbols can be stripped via the `visibility` compiler flag. Adding this 
 
 Make sure that the following has been added to build.gradle:
 
-```
+```groovy
 externalNativeBuild {
     cmake {
         cppFlags "-fvisibility=hidden"
@@ -468,7 +476,7 @@ If source code is provided, you can check the build.gradle file to see whether o
 
 By default, ProGuard removes attributes that are useful for debugging, including line numbers, source file names, and variable names. ProGuard is a free Java class file shrinker, optimizer, obfuscator, and pre-verifier. It is shipped with Android's SDK tools. To activate shrinking for the release build, add the following to build.gradle:
 
-```
+```groovy
 android {
     buildTypes {
         release {
@@ -520,39 +528,28 @@ class a$b
 }
 ```
 
-### References
+### Memory Corruption Bugs
+Android applications often run on a VM where most of the memory corruption issues have been taken care off.
+This does not mean that there are no memory corruption bugs. Take [CVE-2018-9522](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-9522 "CVE in StatsLogEventWrapper") for instance, which is related to serialization issues using Parcels. Next, in native code, we still see the same issues as we explained in the general memory corruption section. Last, we see memory bugs in supporting services, such as with the stagefreight attack as shown [at BlackHat](https://www.blackhat.com/docs/us-15/materials/us-15-Drake-Stagefright-Scary-Code-In-The-Heart-Of-Android.pdf "Stagefreight").
 
-#### OWASP Mobile Top 10 2016
+A memory leak is often an issue as well. This can happen for instance when a reference to the `Context` object is passed around to non-`Activity` classes, or when you pass references to `Activity` classes to your helperclasses.
 
-- M7 - Client Code Quality - https://www.owasp.org/index.php/Mobile_Top_10_2016-M7-Poor_Code_Quality
+#### Static Analysis
+There are various items to look for:
+- Are there native code parts? If so: check for the given issues in the general memory corruption section. Native code can easily be spotted given JNI-wrappers, .CPP/.H/.C files, NDK or other native frameworks.
+- Is there Java code or Kotlin code? Look for Serialization/deserialization issues, such as described in [A brief history of Android deserialization vulnerabilities](https://lgtm.com/blog/android_deserialization "android deserialization").
 
-#### OWASP MASVS
+Note that there can be Memory leaks in Java/Kottline code as well. Look for various items, such as: BroadcastReceivers which are not unregistered, static references to `Activity` or `View` classes, Singleton classes that have references to `Context`, Inner Class references, Anonymous Class references, AsyncTask references, Handler references, Threading done wrong, TimerTask references. For more details, please check:
+- [9 ways to avoid memory leaks in Android](https://android.jlelse.eu/9-ways-to-avoid-memory-leaks-in-android-b6d81648e35e "9 ways to avoid memory leaks in Android")
+- [Memory Leak Patterns in Android](https://android.jlelse.eu/memory-leak-patterns-in-android-4741a7fcb570 "Memory Leak Patterns in Android").
 
-- V6.2: "All inputs from external sources and the user are validated and if necessary sanitized. This includes data received via the UI, IPC mechanisms such as intents, custom URLs, and network sources."
-- V7.1: "The app is signed and provisioned with valid certificate."
-- V7.2: "The app has been built in release mode, with settings appropriate for a release build (e.g. non-debuggable)."
-- V7.3: "Debugging symbols have been removed from native binaries."
-- V7.4: "Debugging code has been removed, and the app does not log verbose errors or debugging messages."
-- V7.6: "The app catches and handles possible exceptions."
-- V7.7: "Error handling logic in security controls denies access by default."
-- V7.9: "Free security features offered by the toolchain, such as byte-code minification, stack protection, PIE support and automatic reference counting, are activated."
+#### Dynamic Analysis
+There are various steps to take:
+- In case of native code: use Valgrind or Mempatrol to analyse the memory usage and memory calls made by the code.
+- In case of Java/Kotlin code, try to recompile the app and use it with [Squares leak canary](https://github.com/square/leakcanary "Leakcanary").
+- Check with the [Memory Profiler from Android Studio](https://developer.android.com/studio/profile/memory-profiler "Memory profiler") for leakage.
+- Check with the [Android Java Deserialization Vulnerability Tester](https://github.com/modzero/modjoda "Android Java Deserialization Vulnerability Tester"), for serialization vulnerabilities.
 
-#### CWE
-
-- CWE-20 - Improper Input Validation
-- CWE-215 - Information Exposure through Debug Information
-- CWE-388 - Error Handling
-- CWE-489 - Leftover Debug Code
-- CWE-656 - Reliance on Security through Obscurity
-
-
-#### Tools
-
-- ProGuard - https://www.guardsquare.com/en/proguard
-- jarsigner - http://docs.oracle.com/javase/7/docs/technotes/tools/windows/jarsigner.html
-- Xposed - http://repo.xposed.info/
-- Drozer - https://labs.mwrinfosecurity.com/assets/BlogFiles/mwri-drozer-user-guide-2015-03-23.pdf
-- GNU nm - https://ftp.gnu.org/old-gnu/Manuals/binutils-2.12/html_node/binutils_4.html
 
 
 ### Checking for Weaknesses in Third Party Libraries
@@ -564,7 +561,7 @@ Android apps often make use of third party libraries. These third party librarie
 - Libraries that are packed within the actual production application, such as `Okhttp3`.
 
 These libraries can have the following two classes of unwanted side-effects:
-- A library can contain a vulnerability, which will make the application vulnerable. A good example are the versions of `OKHTTP` prior to 2.7.5 in which TLS chain polution was possible to bypass SSL pinning.
+- A library can contain a vulnerability, which will make the application vulnerable. A good example are the versions of `OKHTTP` prior to 2.7.5 in which TLS chain pollution was possible to bypass SSL pinning.
 - A library can use a license, such as LGPL2.1, which requires the application author to provide access to the source code for those who use the application and request insight in its sources. In fact the application should then be allowed to be redistributed with modifications to its sourcecode. This can endanger the intellectual property (IP) of the application.
 
 Please note that this issue can hold on multiple levels: When you use webviews with JavaScript running in the webview, the JavaScript libraries can have these issues as well. The same holds for plugins/libraries for Cordova, React-native and Xamarin apps.
@@ -575,7 +572,7 @@ Please note that this issue can hold on multiple levels: When you use webviews w
 
 Detecting vulnerabilities in third party dependencies can be done by means of the OWASP Dependency checker. This is best done by using a gradle plugin, such as `dependency-check-gradle`.
 In order to use the plugin, the following steps need to be applied:
-Install the plugin from Maven central repo by adding the following script to your build.gradle:
+Install the plugin from the Maven central repository by adding the following script to your build.gradle:
 
 ```groovy
 buildscript {
@@ -597,7 +594,7 @@ $ gradle assemble
 $ gradle dependencyCheckAnalyze --info
 ```
 
-The report will be in `build/reports` unless otherwise configured. Use the report in order to analyse the vulnerabilities found. See remediation on what to do given the vulnerabilities found with the libraries.
+The report will be in `build/reports` unless otherwise configured. Use the report in order to analyze the vulnerabilities found. See remediation on what to do given the vulnerabilities found with the libraries.
 
 Please be advised that the plugin requires to download a vulnerability feed. Consult the documentation in case issues arise with the plugin.
 
@@ -606,10 +603,10 @@ Alternatively there are commercial tools which might have a better coverage of t
 Lastly, please note that for hybrid applications, one will have to check the JavaScript dependencies with RetireJS. Similarly for Xamarin, one will have to check the C# dependencies.
 
 When a library is found to contain vulnerabilities, then the following reasoning applies:
-- Is the library packaged with the application? Then check whether the library has a version in which the vulnerability is patched. If not, check wehther the vulnerability actually affects the application. If that is the case or might be the case in the future, then look for an alternative which provides similar funcitonality, but without the vulnerabilities.
-- Is the library not packaged with the application? See if there is a patched version in which the vulnerability is fixed. If this is not the case, check if the  implications of the vulnerability for the build-proces. Could the vulnerability impede a build or weaken the security of the build-pipeline? Then try looking for an alternative in which the vulnerability is fixed.
+- Is the library packaged with the application? Then check whether the library has a version in which the vulnerability is patched. If not, check whether the vulnerability actually affects the application. If that is the case or might be the case in the future, then look for an alternative which provides similar functionality, but without the vulnerabilities.
+- Is the library not packaged with the application? See if there is a patched version in which the vulnerability is fixed. If this is not the case, check if the  implications of the vulnerability for the build-process. Could the vulnerability impede a build or weaken the security of the build-pipeline? Then try looking for an alternative in which the vulnerability is fixed.
 
-When the sources are not available, one can decompile the app and check the jar files. When Dexguard or Proguard are applied properly, then version information about the library is often obfuscated and therefore gone. Otherwise you can still find the information very often in the comments of the java files of given libraries. Tools such as MobSF can help in analyzing the possible libraries packed with the application. If you can retrieve the version of the library, either via comments, or via specific methods used in certain versions, you can look them up for CVEs by hand.
+When the sources are not available, one can decompile the app and check the jar files. When Dexguard or Proguard are applied properly, then version information about the library is often obfuscated and therefore gone. Otherwise you can still find the information very often in the comments of the Java files of given libraries. Tools such as MobSF can help in analyzing the possible libraries packed with the application. If you can retrieve the version of the library, either via comments, or via specific methods used in certain versions, you can look them up for CVEs by hand.
 
 ##### Detecting the licenses used by the libraries of the application
 
@@ -630,7 +627,7 @@ $ gradle assemble
 $ gradle downloadLicenses
 ```
 
-Now a license-report will be generated, which can be used to consult the licenses used by the third party libraries. Please check the license agreemts to see whether a copyright notice needs to be included into the app and whether the licensetype requires to open-source the code of the application.
+Now a license-report will be generated, which can be used to consult the licenses used by the third party libraries. Please check the license agreements to see whether a copyright notice needs to be included into the app and whether the license type requires to open-source the code of the application.
 
 Similar to dependency checking, there are commercial tools which are able to check the licenses as well, such as SourceClear, Snyk or Blackduck.
 
@@ -638,32 +635,64 @@ Similar to dependency checking, there are commercial tools which are able to che
 
 When a library contains a license in which the application IP needs to be open-sourced, check if there is an alternative for the library which can be used to provide similar functionalities.
 
-Note: In case of a hybrid app, please check the buildtools used: most of them do have a license enumeration plugin to find the licenses being used.
+Note: In case of a hybrid app, please check the build tools used: most of them do have a license enumeration plugin to find the licenses being used.
 
-When the sources are not available, one can decompile the app and check the jar files. When Dexguard or Proguard are applied properly, then version information about the library is often gone. Otherwise you can still find it very often in the comments of the java files of given libraries. Tools such as MobSF can help in analyzing the possible libraries packed with the application. If you can retrieve the version of the library, either via comments, or via specific methods used in certain versions, you can look them up for their licenses being used by hand.
+When the sources are not available, one can decompile the app and check the jar files. When Dexguard or Proguard are applied properly, then version information about the library is often gone. Otherwise you can still find it very often in the comments of the Java files of given libraries. Tools such as MobSF can help in analyzing the possible libraries packed with the application. If you can retrieve the version of the library, either via comments, or via specific methods used in certain versions, you can look them up for their licenses being used by hand.
 
 #### Dynamic Analysis
 
-The dynamic analysis of this secion comprises validating whether the copyrights of the licensens have been adhered to. This often means that the application should have an `about` or `EULA` section in which the copy-right statements are noted as required by the license of the third party library.
+The dynamic analysis of this section comprises validating whether the copyrights of the licenses have been adhered to. This often means that the application should have an `about` or `EULA` section in which the copy-right statements are noted as required by the license of the third party library.
 
 
-#### References
+### References
 
-##### OWASP Mobile Top 10 2016
+#### OWASP Mobile Top 10 2016
 
-- M7 - Client Code Quality - https://www.owasp.org/index.php/Mobile_Top_10_2016-M7-Poor_Code_Quality
+- M7 - Poor Code Quality - https://www.owasp.org/index.php/Mobile_Top_10_2016-M7-Poor_Code_Quality
 
-##### OWASP MASVS
-
+#### OWASP MASVS
+- V6.2: "All inputs from external sources and the user are validated and if necessary sanitized. This includes data received via the UI, IPC mechanisms such as intents, custom URLs, and network sources."
+- V7.1: "The app is signed and provisioned with valid certificate."
+- V7.2: "The app has been built in release mode, with settings appropriate for a release build (e.g. non-debuggable)."
+- V7.3: "Debugging symbols have been removed from native binaries."
+- V7.4: "Debugging code has been removed, and the app does not log verbose errors or debugging messages."
 - V7.5: "All third party components used by the mobile app, such as libraries and frameworks, are identified, and checked for known vulnerabilities."
+- V7.6: "The app catches and handles possible exceptions."
+- V7.7: "Error handling logic in security controls denies access by default."
+- V7.8: "In unmanaged code, memory is allocated, freed and used securely."
+- V7.9: "Free security features offered by the toolchain, such as byte-code minification, stack protection, PIE support and automatic reference counting, are activated."
 
-##### CWE
+#### CWE
+
+- CWE-20 - Improper Input Validation
+- CWE-215 - Information Exposure through Debug Information
+- CWE-388 - Error Handling
+- CWE-489 - Leftover Debug Code
+- CWE-656 - Reliance on Security through Obscurity
 - CWE-937 - OWASP Top Ten 2013 Category A9 - Using Components with Known Vulnerabilities
 
-##### Tools
-- [Black Duck](https://www.blackducksoftware.com/ "Black Duck")
-- [Sourceclear](https://www.sourceclear.com/ "Sourceclear")
-- [Snyk](https://snyk.io/ "snyk")
-- [Gradle license plugn](https://github.com/hierynomus/license-gradle-plugin "Gradle license plugin")
-- [Dependency-check-gradle](https://github.com/jeremylong/dependency-check-gradle "Dependency-check-gradle")
-- [MobSF](https://www.github.com/MobSF/Mobile-Security-Framework-MobSF, "MobSF")
+#### Tools
+
+- ProGuard - https://www.guardsquare.com/en/proguard
+- jarsigner - http://docs.oracle.com/javase/7/docs/technotes/tools/windows/jarsigner.html
+- Xposed - http://repo.xposed.info/
+- Drozer - https://labs.mwrinfosecurity.com/assets/BlogFiles/mwri-drozer-user-guide-2015-03-23.pdf
+- GNU nm - https://ftp.gnu.org/old-gnu/Manuals/binutils-2.12/html_node/binutils_4.html
+- Black Duck - https://www.blackducksoftware.com/
+- Sourceclear -  https://www.sourceclear.com/
+- Snyk - https://snyk.io/
+- Gradle license plugn - https://github.com/hierynomus/license-gradle-plugin
+- Dependency-check-gradle - https://github.com/jeremylong/dependency-check-gradle
+- MobSF - https://www.github.com/MobSF/Mobile-Security-Framework-MobSF
+- Squares leak canary - https://github.com/square/leakcanary
+- Memory Profiler from Android Studio - https://developer.android.com/studio/profile/memory-profiler
+- Android Java Deserialization Vulnerability Tester - https://github.com/modzero/modjoda
+
+#### Memory Analysis References
+- [A brief history of Android deserialization vulnerabilities](https://lgtm.com/blog/android_deserialization "android deserialization")
+- [9 ways to avoid memory leaks in Android](https://android.jlelse.eu/9-ways-to-avoid-memory-leaks-in-android-b6d81648e35e "9 ways to avoid memory leaks in Android")
+- [Memory Leak Patterns in Android](https://android.jlelse.eu/memory-leak-patterns-in-android-4741a7fcb570 "Memory Leak Patterns in Android")
+
+#### Android Documentation
+
+- [APK signature scheme with key rotation](https://developer.android.com/about/versions/pie/android-9.0#apk-key-rotation)

@@ -100,12 +100,32 @@ Secure ways to retrieve the key include:
 - Asking the user to decrypt the database with a PIN or password once the app is opened (weak passwords and PINs are vulnerable to brute force attacks)
 - Storing the key on the server and allowing it to be accessed from a web service only (so that the app can be used only when the device is online)
 
+##### Firebase Real-time Databases
+
+Firebase is a development platform with more than 15 products, and one of them is Firebase Real-time Database. It can be leveraged by application developers to store and sync data with a NoSQL cloud-hosted database. The data is stored as JSON and is synchronized in real-time to every connected client and also remains available even when the application goes offline.
+
+###### Identifying Misconfigured Firebase Instance
+
+In Jan 2018, [Appthority Mobile Threat Team (MTT)](https://cdn2.hubspot.net/hubfs/436053/Appthority%20Q2-2018%20MTR%20Unsecured%20Firebase%20Databases.pdf "Unsecured Firebase Databases: Exposing Sensitive Data via Thousands of Mobile Apps") performed security research on insecure backend services connecting to mobile applications. They discovered a misconfiguration in Firebase, which is one of the top 10 most popular data stores which could allow attackers to retrieve all the unprotected data hosted on the cloud server. The team performed the research on 2 Million+ mobile applications and found that the around 9% of Android applications and almost half (47%) of iOS apps that connect to a Firebase database were vulnerable.
+
+The misconfigured Firebase instance can be identified by making the following network call:
+
+_https://\<firebaseProjectName\>.firebaseio.com/.json_
+
+The _firebaseProjectName_ can be retrieved from the mobile application by reverse engineering the application. Alternatively, the analysts can use [Firebase Scanner](https://github.com/shivsahni/FireBaseScanner, "Firebase Scanner"), a python script that automates the task above as shown below:
+
+```
+python FirebaseScanner.py -p <pathOfAPKFile>
+
+python FirebaseScanner.py -f <commaSeperatedFirebaseProjectNames>
+```
+
 ##### Realm Databases
 
 The [Realm Database for Java](https://realm.io/docs/java/latest/ "Realm Database") is becoming more and more popular among developers. The database and its contents can be encrypted with a key stored in the configuration file.
 
 ```java
-//the getKey() method either gets the key from the server or from a Keystore, or is deferred from a password.
+//the getKey() method either gets the key from the server or from a KeyStore, or is deferred from a password.
 RealmConfiguration config = new RealmConfiguration.Builder()
   .encryptionKey(getKey())
   .build();
@@ -273,6 +293,16 @@ Inspect the source code to determine whether native Android mechanisms identify 
 - Make sure that the app is using the Android KeyStore and Cipher mechanisms to securely store encrypted information on the device. Look for the patterns `AndroidKeystore`, `import java.security.KeyStore`, `import javax.crypto.Cipher`, `import java.security.SecureRandom`, and corresponding usages.
 - Use the `store(OutputStream stream, char[] password)` function to store the KeyStore to disk with a password. Make sure that the password is provided by the user, not hard-coded.
 
+##### 3rd Party libraries
+
+There are several different open-source libraries that offer encryption capabilities specific for the Android platform.
+
+- **[Java AES Crypto](https://github.com/tozny/java-aes-crypto "Java AES Crypto")** - A simple Android class for encrypting and decrypting strings.
+- **[SQL Cipher](https://www.zetetic.net/sqlcipher/sqlcipher-for-android/ "SQL Cipher")** - SQLCipher is an open source extension to SQLite that provides transparent 256-bit AES encryption of database files.
+- **[Secure Preferences](https://github.com/scottyab/secure-preferences "Secure Preferences")** - Android Shared preference wrapper than encrypts the keys and values of Shared Preferences.
+
+> Please keep in mind that as long as the key is not stored in the KeyStore, it is always possible to easily retrieve the key on a rooted device and the decrypt the values you are trying to protect.
+
 #### Dynamic Analysis
 
 Install and use the app, executing all functions at least once. Data can be generated when entered by the user, sent by the endpoint, or shipped with the app. Then complete the following:
@@ -293,7 +323,7 @@ For any publicly accessible data storage, any process can override the data. Thi
 #### Static analysis
 
 ##### Using Shared Preferences
-When you use the `SharedPreferences.Editor` to read/write int/boolean/long values, you cannot check whether the data is overridden or not. However: it can hardly be used for actual attacks other than chaning the values (E.g.: no additional exploits can be packed which will take over the control flow). In the case of a `String` or a `StringSet`  one should be careful with how the data is interpreted.
+When you use the `SharedPreferences.Editor` to read/write int/boolean/long values, you cannot check whether the data is overridden or not. However: it can hardly be used for actual attacks other than chaining the values (E.g.: no additional exploits can be packed which will take over the control flow). In the case of a `String` or a `StringSet`  one should be careful with how the data is interpreted.
 Using reflection based persistence? Check the section on "Testing Object Persistence" for Android to see how it should be validated.
 Using the `SharedPreferences.Editor` to store and read certificates or keys? Make sure you have patched your security provider given vulnerabilities such as found in [Bouncy Castle](https://www.cvedetails.com/cve/CVE-2018-1000613/ "Key reading vulnerability due to unsafe reflection").
 
@@ -330,7 +360,9 @@ Check the app's source code for logging mechanisms by searching for the followin
   * logging
   * logs
 
-While preparing the production release, you can use tools like `ProGuard` (included in Android Studio) to delete logging-related code. To determine whether all the `android.util.Log` class' logging functions have been removed, check the ProGuard configuration file (_proguard-project.txt_) for the following options:
+While preparing the production release, you can use tools like `ProGuard` (included in Android Studio). [ProGuard](https://www.guardsquare.com/en/products/proguard "ProGuard") is a free Java class file shrinker, optimizer, obfuscator, and preverifier. It detects and removes unused classes, fields, methods, and attributes and can also be used to delete logging-related code.
+
+To determine whether all the `android.util.Log` class' logging functions have been removed, check the ProGuard configuration file (_proguard-project.txt_) for the following options:
 
 ```java
 -assumenosideeffects class android.util.Log
@@ -361,32 +393,13 @@ ProGuard guarantees removal of the `Log.v` method call. Whether the rest of the 
 
 This is a security risk because the (unused) string leaks plain text data into memory, which can be accessed via a debugger or memory dumping.
 
-Unfortunately, no silver bullet exists for this issue, but a few options are available:
+Unfortunately, no silver bullet exists for this issue, but one option would be to implement a custom logging facility that takes simple arguments and constructs the log statements internally.
 
-- Implement a custom logging facility that takes simple arguments and constructs the log statements internally.
 ```java
 SecureLog.v("Private key [byte format]: ", key);
 ```
+
 Then configure ProGuard to strip its calls.
-
-- Remove logs at the source level instead of at the compiled bytecode level. Below is a simple Gradle task that comments out all log statements, including any inline string builders:
-
-```
-afterEvaluate {
-  project.getTasks().findAll { task -> task.name.contains("compile") && task.name.contains("Release")}.each { task ->
-      task.dependsOn('removeLogs')
-  }
-
-  task removeLogs() {
-    doLast {
-      fileTree(dir: project.file('src')).each { File file ->
-        def out = file.getText("UTF-8").replaceAll("((android\\.util\\.)*Log\\.([ewidv]|wtf)\\s*\\([\\S\\s]*?\\)\\s*;)", "/*\$1*/")
-        file.write(out);
-      }
-    }
-  }
-}
-```
 
 
 #### Dynamic Analysis
@@ -405,7 +418,7 @@ Many application developers still use `System.out.println` or `printStackTrace` 
 $ adb logcat > logcat.log
 ```
 
-With the following command you can specifically grep for the log output of the app in scope, just insert the package name.
+With the following command you can specifically grep for the log output of the app in scope, just insert the package name. Of course your app needs to be running for ```ps``` to be able to get its PID.
 
 ```shell
 $ adb logcat | grep "$(adb shell ps | grep <package-name> | awk '{print $2}')"
@@ -443,7 +456,7 @@ To intercept traffic between the client and server, you can perform dynamic anal
 
 #### Overview
 
-When users type in input fields, the software automatically suggests data. This feature can be very useful for messaging apps. Hovewer, the keyboard cache may disclose sensitive information when the user selects an input field that takes this type of information.
+When users type in input fields, the software automatically suggests data. This feature can be very useful for messaging apps. However, the keyboard cache may disclose sensitive information when the user selects an input field that takes this type of information.
 
 #### Static Analysis
 
@@ -783,6 +796,12 @@ After executing all available app functions, attempt to back up via `adb`. If th
 ```shell
 $ adb backup -apk -nosystem <package-name>
 ```
+ADB should respond now with "Now unlock your device and confirm the backup operation" and you should be asked on the Android phone for a password. This is an optional step and you don't need to provide one. If the phone does not prompt this message, try the following command including the quotes:
+
+```shell
+$ adb backup "-apk -nosystem <package-name>"
+```
+The problem happens when your device has an adb version prior to 1.0.31. If that's the case you must use an adb version of 1.0.31 also on your host machine. Versions of adb after 1.0.32 [broke the backwards compatibility.](https://issuetracker.google.com/issues/37096097 "adb backup is broken since ADB version 1.0.32")
 
 Approve the backup from your device by selecting the _Back up my data_ option. After the backup process is finished, the file _.ab_ will be in your working directory.
 Run the following command to convert the .ab file to tar.
@@ -1176,3 +1195,13 @@ The dynamic analysis depends on the checks enforced by the app and their expecte
 - Memory Analyzer which is part of Eclipse - https://www.eclipse.org/downloads/
 - Fridump - https://github.com/Nightbringer21/fridump
 - LiME - https://github.com/504ensicsLabs/LiME
+- Firebase Scanner - https://github.com/shivsahni/FireBaseScanner
+
+#### Libraries
+
+- Java AES Crypto - https://github.com/tozny/java-aes-crypto
+- SQL Cipher - https://www.zetetic.net/sqlcipher/sqlcipher-for-android
+- Secure Preferences - https://github.com/scottyab/secure-preferences
+
+#### Others
+- Appthority Mobile Threat Team Research Paper - https://cdn2.hubspot.net/hubfs/436053/Appthority%20Q2-2018%20MTR%20Unsecured%20Firebase%20Databases.pdf
